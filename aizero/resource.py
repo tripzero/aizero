@@ -4,10 +4,10 @@ import traceback
 
 if sys.version_info >= (3, 0):
     import asyncio
-    from resource_py3 import Py3PollWhileTrue as poll_while_true
+    from aizero import Py3PollWhileTrue as poll_while_true
 else:
     import trollius as asyncio
-    from resource_py2 import Py2PollWhileTrue as poll_while_true
+    from aizero import Py2PollWhileTrue as poll_while_true
 
 ''' This is the basic resource class.  It represents a simple interface to
     subscribe to changes in different properties

@@ -5,7 +5,7 @@ import tempfile
 import time
 from collections import deque
 from datetime import datetime
-from resource import Resource
+from aizero import Resource
 
 import numpy as np
 import tensorflow as tf

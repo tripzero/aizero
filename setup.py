@@ -13,13 +13,13 @@ Operating System :: Unix
 Operating System :: POSIX :: Linux
 """
 
-setup(name='ai',
+setup(name='aizero',
       version='1.0',
       description='Python module for simple machine learning',
       author='Kevron Rees',
       author_email='tripzero.kev@gmail.com',
       url='https://github.com/tripzero/ai',
-      packages=["ai"],
+      packages=["aizero"],
       license="LGPL Version 2.0",
       classifiers=filter(None, classifiers.split("\n"))
       )

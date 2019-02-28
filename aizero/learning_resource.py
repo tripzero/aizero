@@ -2,8 +2,8 @@ import os
 import sys
 import traceback
 
-from resource import get_resource as rsrc
-from generic_predictor import GenericPredictor, HashLayer
+from aizero import get_resource as rsrc
+from aizero import GenericPredictor, HashLayer
 
 
 class LearningResource:
