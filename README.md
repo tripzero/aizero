@@ -1,2 +1,2 @@
 # aizero
-basic machine learning wrapper to tensorflow
+framework for automation and machine learning
