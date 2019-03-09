@@ -10,7 +10,8 @@ class LearningResource:
 
     def __init__(self, model_subdir, layers=[], create_predictors_for_layers=None,
                  estimator_class=None,
-                 training_steps=2000):
+                 training_steps=2000,
+                 record_predictions=False):
         """
             :param create_predictors_for_layers - list of predictors to create.
                                                   by default predictors will be
@@ -18,6 +19,8 @@ class LearningResource:
         """
 
         self.training_steps = training_steps
+        self.prediction_records = {}
+        self.record_predictions = record_predictions
 
         try:
             db_root = rsrc("ConfigurationResource").config["db_root"]
@@ -76,15 +79,24 @@ class LearningResource:
         if feature_name not in self.predictors.keys():
             print("no predictor for {}".format(feature_name))
 
-        prediction_record = {}
+        result = self.predictors[feature_name].predict(replace_layers)
 
-        for layer in self.all_layers:
-            prediction_record[layer.layer_name] = layer.value
+        if self.record_predictions:
+            prediction_record = {}
 
-        for layer in replace_layers:
-            prediction_record[layer.layer_name] = layer.value
+            for layer in self.all_layers:
+                prediction_record[layer.layer_name] = layer.value
 
-        return self.predictors[feature_name].predict(replace_layers)
+            for layer in replace_layers:
+                prediction_record[layer.layer_name] = layer.value
+
+            prediction_record["predicted_{}".format(feature_name)] = result
+
+            if feature_name not in self.prediction_records:
+                self.prediction_records[feature_name] = []
+            self.prediction_records[feature_name].append(prediction_record)
+
+        return result
 
     def train(self):
         return self._train(self.predictors)
@@ -149,10 +161,37 @@ class LearningResource:
                 f.write(",".join(row))
                 f.write("\n")
 
+    def predictions_to_csv(self, feature, filename):
+        if feature not in self.prediction_records:
+            print("{} not a recorded feature. Turn on {}.record_predictions?".format(
+                feature, self.__class__.__name__))
+            return
+
+        prediction_feature = self.prediction_records[feature]
+
+        mod = 'w'
+
+        if os.path.isfile(filename):
+            mod = 'a'
+
+        with open(filename, mod) as f:
+
+            if mod != 'a':
+                f.write(",".join(prediction_feature[0].keys()))
+                f.write('\n')
+
+            for line in prediction_feature:
+                real_line = []
+                for d in line.values():
+                    real_line.append(str(round(d, 2)))
+
+                f.write(",".join(real_line))
+                f.write('\n')
+
     def from_csv(self, filename):
         import pandas
 
-        dataframe = pandas.read_csv(csv_file, header=0)
+        dataframe = pandas.read_csv(filename, header=0)
 
         for layer in self.all_layers:
 

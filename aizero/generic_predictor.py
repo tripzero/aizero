@@ -15,6 +15,10 @@ class NoneValue(Exception):
     pass
 
 
+def normalize(v, mean, std):
+    return (v - mean) / std
+
+
 class Layer:
 
     def __init__(self, layer_name, resource, property_name, data_max_size=50000000, no_persist=False):
@@ -280,15 +284,16 @@ class GenericPredictor:
                 continue
 
             if only_last:
-                features[layer.layer_name] = layer.get_constant([layer.value])
+                features[layer.layer_name] = layer.get_constant(
+                    [layer.value])
             else:
                 features[layer.layer_name] = layer.get_constant(
                     layer.values[-minimum_length_data:])
 
-        if replace_layers != None:
-            for replace_layer in replace_layers:
-                features[replace_layer.layer_name] = replace_layer.get_constant(
-                    [replace_layer.value])
+        if replace_layers is not None:
+            for layer in replace_layers:
+                features[layer.layer_name] = layer.get_constant(
+                    [layer.value])
 
         return features
 
@@ -378,7 +383,7 @@ class Em7Resource:
         self.load_data(start_date, end_date)
 
     def load_data(self, start_date, end_date):
-        import em7
+        import aizero.em7 as em7
         data = em7.get_data(
             self.device,
             self.resource,
@@ -469,7 +474,7 @@ class FakeResource:
     def __init__(self, value, name="fakeresource"):
         self.value = value
         self.name = name
-        self.values = [value]
+        # self.values = [value]
 
     def getValue(self, pn):
         return self.value

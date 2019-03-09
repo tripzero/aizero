@@ -26,17 +26,25 @@ def get_data(device_name, app_name, property_name, credentials,
     c = Client(*credentials)
 
     device = None
-    devices = c.devices(details=True)
 
-    for dev in devices:
-        if dev.description == device_name:
-            device = dev
-            break
+    if not isinstance(device_name, int):
+        devices = c.devices(details=True)
 
-    if not device:
-        print("could not find device {}".format(device_name))
-        print("available devices: {}".format(devices))
-        return None
+        for dev in devices:
+            if dev.description == device_name:
+                device = dev
+                break
+
+        if not device:
+            print("could not find device {}".format(device_name))
+            print("available devices: {}".format(devices))
+            return None
+    else:
+        try:
+            device = c.get_device(device_name)
+        except Exception:
+            print("could not find device {}".format(device_name))
+            return None
 
     counter = None
     counter_names = []
