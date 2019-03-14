@@ -30,6 +30,52 @@ def get_minimum_layer_length(layers):
     return np.min(lengths)
 
 
+def to_dataframe(layers, last=False):
+    d = {}
+    min_features = get_minimum_layer_length(layers)
+
+    for layer in layers:
+        d[layer.layer_name] = layer.values[-min_features:]
+
+    raw_dataset = pd.DataFrame(data=d, dtype=np.float)
+
+    dataset = raw_dataset.copy()
+
+    dataset = dataset.dropna()
+
+    if not last:
+        return dataset
+
+    return dataset[-1:]
+
+
+def timestamped_layers_to_dataframe(layers, last=False):
+    d = {}
+    min_features = get_minimum_layer_length(layers)
+
+    for layer in layers:
+        try:
+            col_name = "{}_timestamp".format(layer.layer_name)
+            data = layer.resource.data
+            d[col_name] = data[-min_features:, 0]
+            d[layer.layer_name] = data[-min_features:, 1]
+        except Exception as ex:
+            print(ex)
+            print("layer {} does not appear to have timestamp. skipping".format(
+                layer.layer_name))
+
+    raw_dataset = pd.DataFrame(data=d, dtype=np.float)
+
+    dataset = raw_dataset.copy()
+
+    dataset = dataset.dropna()
+
+    if not last:
+        return dataset
+
+    return dataset
+
+
 class Learning:
 
     def __init__(self, model_subdir, layers,
@@ -96,7 +142,7 @@ class Learning:
 
         return train_data, test_dataset
 
-    def train(self, and_test=False):
+    def train(self, and_test=False, tensorboard=False):
 
         p_feature = self.prediction_feature
 
@@ -121,16 +167,26 @@ class Learning:
                                                       save_weights_only=True,
                                                       verbose=0)
 
+        callbacks = [early_stop, cp_callback, PrintDot()]
+
+        if tensorboard:
+            from datetime import datetime
+            t = datetime.now().time()
+            tb_callback = keras.callbacks.TensorBoard(log_dir="logs/{}".format(t))
+            callbacks.append(tb_callback)
+
+
+
         history = self.model.fit(
             normed_train_data, train_labels,
             epochs=1000, validation_split=0.2, verbose=0,
-            callbacks=[early_stop, cp_callback, PrintDot()])
+            callbacks=callbacks)
 
         if and_test:
             loss, mae, mse = self.model.evaluate(
                 normed_test_data, test_labels, verbose=0)
 
-            print("testing set mean abs Error: {:5.2f}".format(mae))
+            print("\ntesting set mean abs Error: {:5.2f}".format(mae))
             self.mean_absolute_error = mae
 
         return history
@@ -182,22 +238,7 @@ class Learning:
                 return layer
 
     def to_dataframe(self, layers, last=False):
-        d = {}
-        min_features = get_minimum_layer_length(layers)
-
-        for layer in layers:
-            d[layer.layer_name] = layer.values[-min_features:]
-
-        raw_dataset = pd.DataFrame(data=d, dtype=np.float)
-
-        dataset = raw_dataset.copy()
-
-        dataset = dataset.dropna()
-
-        if not last:
-            return dataset
-
-        return dataset[-1:]
+        return to_dataframe(layers, last)
 
     def plot_history(self, history):
         import matplotlib.pyplot as plt
@@ -275,6 +316,14 @@ def layers_from_csv(csv_path, layer_names):
         layers.append(layer)
 
     return layers
+
+
+def layers_to_csv(csv_path, layers):
+    with open(csv_path, 'w') as f:
+
+        data = timestamped_layers_to_dataframe(layers)
+        with open(csv_path, 'w') as f:
+            data.to_csv(path_or_buf=f, header=True)
 
 
 def test_create_cp_learning():

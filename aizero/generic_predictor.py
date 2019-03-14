@@ -439,11 +439,59 @@ class Em7Resource:
         for i in self.data:
             for n in other.data:
                 if fuzzy_date_compare(i[0], n[0], wiggle):
+                    # print("{} and {} have a match: {} vs {}".format(
+                    #    self.name, other.name, i[0], n[0]))
                     values = np.append(values, [i], axis=0)
                     other_values = np.append(other_values, [n], axis=0)
                     break
 
         return values, other_values
+
+    def align_many2(self, others, wiggle=7 * 60):
+
+        def fuzzy_date_compare(timestamp1, timestamp2, wiggle):
+            return (abs(timestamp1 - timestamp2) <= wiggle)
+
+        # first find the array with least elements:
+        all_of_them = [self]
+        for i in others:
+            all_of_them.append(i)
+
+        smallest = None
+        mins_array = []
+
+        for arry in all_of_them:
+            mins_array.append(len(arry.data))
+
+        min_index = np.argwhere(mins_array == np.min(mins_array))[-1][0]
+        smallest = all_of_them[min_index]
+
+        # remove the smalled from the 'all' list
+        all_of_them.pop(min_index)
+
+        values = np.zeros((0, 2), np.float32)
+
+        for i in smallest.data:
+            has_it = False
+            for arry in all_of_them:
+                for n in arry.data:
+                    if fuzzy_date_compare(i[0], n[0], wiggle):
+                        has_it = True
+                        break
+
+                if not has_it:
+                    print("no match for {}".format(i[0]))
+                    break
+
+            if has_it:
+                # print("adding {} to {} timeseries".format(
+                #   i[0], smallest.name))
+                values = np.append(values, [i], axis=0)
+
+        smallest.data = values
+
+        for arry in all_of_them:
+            v, arry.data = arry.align(smallest, wiggle)
 
     def align_many(self, others, wiggle=7 * 60):
 
@@ -466,7 +514,7 @@ class Em7Resource:
 
         # do the alignment of everything else to the smallest data set
         for arry in all_of_them:
-            smallest.data, arry.data = smallest.align(arry)
+            smallest.data, arry.data = arry.align(smallest, wiggle)
 
 
 class FakeResource:
