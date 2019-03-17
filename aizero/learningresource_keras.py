@@ -78,10 +78,10 @@ def timestamped_layers_to_dataframe(layers, last=False):
 
 class Learning:
 
-    def __init__(self, model_subdir, layers,
+    def __init__(self, model_subdir, features,
                  prediction_feature, **kwargs):
 
-        self.all_layers = layers
+        self.all_layers = features
         self.prediction_feature = prediction_feature
         self.stats = None
 
@@ -96,7 +96,7 @@ class Learning:
 
         self.model = keras.Sequential([
             keras.layers.Dense(64, activation=tf.nn.relu,
-                               input_shape=[len(layers) - 1]),
+                               input_shape=[len(features) - 1]),
             keras.layers.Dense(64, activation=tf.nn.relu),
             keras.layers.Dense(1)
         ])
@@ -172,10 +172,9 @@ class Learning:
         if tensorboard:
             from datetime import datetime
             t = datetime.now().time()
-            tb_callback = keras.callbacks.TensorBoard(log_dir="logs/{}".format(t))
+            tb_callback = keras.callbacks.TensorBoard(
+                log_dir="logs/{}".format(t))
             callbacks.append(tb_callback)
-
-
 
         history = self.model.fit(
             normed_train_data, train_labels,
