@@ -1,6 +1,9 @@
 import inspect
 import sys
+import os
 import traceback
+import pandas as pd
+from datetime import datetime
 
 if sys.version_info >= (3, 0):
     import asyncio
@@ -96,6 +99,7 @@ class Resource(object):
         self.name = name
         self.deviceName = name
         self.ignore_same_value = ignore_same_value
+        self.data_frame = None
 
         Resource.register(self)
 
@@ -132,7 +136,8 @@ class Resource(object):
             Resource._mqtt_wrapper_args = mqtt_export_options
 
     def export_mqtt(self, broker="localhost", mqtt_export_options=None):
-        from mqtt_resource import MqttWrapper
+        from aizero.mqtt_resource import MqttWrapper
+
         if mqtt_export_options is None:
             mqtt_export_options = {}
 
@@ -265,6 +270,10 @@ class Resource(object):
             return
 
         self.variables[property] = value
+        self.variables["timestamp"] = datetime.utcnow()
+
+        self.snapshot()
+
         self.propertyChanged(property, value)
 
     def getValue(self, property):
@@ -273,6 +282,33 @@ class Resource(object):
             raise Exception("Invalid property: {}".format(property))
 
         return self.variables[property]
+
+    def snapshot(self):
+        """
+        create/update dataframe from current values
+        """
+
+        if self.data_frame is None:
+            self.restore(None)
+
+        self.data_frame.append(self.variables, ignore_index=True)
+
+    def restore(self, persist_file):
+        """
+        restore data values from filesystem
+        """
+        self.data_frame = pd.DataFrame(columns=self.variables.keys())
+
+        if persist_file is not None:
+            self.data_frame = pd.read_csv(persist_file,
+                                          parse_dates=True,
+                                          infer_datetime_format=True)
+
+    def persist(self, persist_file):
+        if self.data_frame is None:
+            raise ValueError("Resource.data_frame is None")
+
+        self.data_frame.to_csv(persist_file, mode='w', index=False)
 
     @asyncio.coroutine
     def poll(self):
@@ -294,7 +330,7 @@ def test_subscribe2():
 
 def test_mqtt_auto_export():
 
-    from mqtt_resource import MqttResource
+    from aizero.mqtt_resource import MqttResource
 
     Resource.auto_export_mqtt(True)
 
@@ -312,3 +348,43 @@ def test_mqtt_auto_export():
     loop.run_until_complete(asyncio.sleep(5))
 
     assert resource_sub.getValue("test1") == "winning"
+
+
+def test_persist_restore():
+    persist_file = "./resource_test.csv.xz"
+
+    if os.path.isfile(persist_file):
+        os.remove(persist_file)
+
+    a1 = Resource("Resource", variables=["a", "b", "c"])
+
+    a1.setValue("a", 1)
+    a1.setValue("b", 2)
+    a1.setValue("c", 3)
+
+    a1.persist(persist_file)
+    print(a1.data_frame)
+
+    a2 = Resource("Resource2", variables=["a", "b", "c"])
+
+    a2.restore(persist_file)
+    print(a2.data_frame)
+
+    if os.path.isfile(persist_file):
+        os.remove(persist_file)
+
+    assert a1.data_frame.equals(a2.data_frame)
+
+
+def test_persist_file_not_found():
+    a1 = Resource("Resource_test_persist_file_not_found",
+                  variables=["a", "b", "c"])
+
+    has_value_error = False
+
+    try:
+        a1.persist(None)
+    except ValueError:
+        has_value_error = True
+
+    assert has_value_error

@@ -110,12 +110,12 @@ class Learning:
         try:
             self.model.load_weights(self.model_path)
 
-            for layer in self.all_layers:
+            for feature in self.all_layers:
                 print("restoring layer {} from {}".format(
-                    layer.layer_name, self.values_cache))
-                layer.restore(self.values_cache)
+                    feature.layer_name, self.values_cache))
+                feature.restore(self.values_cache)
                 print("layer {} has ({}) values".format(
-                    layer.layer_name, len(layer.values)))
+                    feature.layer_name, len(feature.values)))
 
             self.get_stats(self.to_dataframe(self.all_layers))
 
@@ -317,10 +317,14 @@ def layers_from_csv(csv_path, layer_names):
     return layers
 
 
-def layers_to_csv(csv_path, layers):
+def layers_to_csv(csv_path, layers, timestamps=False):
     with open(csv_path, 'w') as f:
 
-        data = timestamped_layers_to_dataframe(layers)
+        if timestamps:
+            data = timestamped_layers_to_dataframe(layers)
+        else:
+            data = to_dataframe(layers)
+
         with open(csv_path, 'w') as f:
             data.to_csv(path_or_buf=f, header=True)
 

@@ -507,10 +507,10 @@ class Em7Resource:
             mins_array.append(len(arry.data))
 
         min_index = np.argwhere(mins_array == np.min(mins_array))[-1][0]
-        smallest = all_of_them[min_index]
+        # smallest = all_of_them[min_index]
 
         # remove the smalled from the 'all' list
-        all_of_them.pop(min_index)
+        smallest = all_of_them.pop(min_index)
 
         # do the alignment of everything else to the smallest data set
         for arry in all_of_them:
