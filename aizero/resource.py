@@ -3,7 +3,7 @@ import sys
 import os
 import traceback
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 
 if sys.version_info >= (3, 0):
     import asyncio
@@ -31,6 +31,15 @@ def DAYS(days):
 
 def get_resource(resource_name):
     return Resource.resource(resource_name)
+
+
+def to_timestamp(dt):
+    """
+    :param dt datetime object
+    returns unix timestamp
+    """
+
+    return dt.replace(tzinfo=timezone.utc).timestamp()
 
 
 class ResourceNotFoundException(Exception):
@@ -211,14 +220,14 @@ class Resource(object):
 
             try:
                 callback()
-            except:
+            except Exception:
                 exc_type, exc_value, exc_traceback = sys.exc_info()
                 traceback.print_tb(exc_traceback, limit=1, file=sys.stdout)
                 traceback.print_exception(exc_type, exc_value, exc_traceback,
                                           limit=6, file=sys.stdout)
             # stop looping
             return False
-        except:
+        except Exception:
             pass
 
         return True
@@ -255,7 +264,7 @@ class Resource(object):
         for cb in callbacks:
             try:
                 cb(value)
-            except:
+            except Exception:
                 print("error calling subscription callback")
                 exc_type, exc_value, exc_traceback = sys.exc_info()
                 traceback.print_tb(exc_traceback, limit=6, file=sys.stdout)
@@ -263,6 +272,12 @@ class Resource(object):
                                           limit=12, file=sys.stdout)
 
     def setValue(self, property, value):
+        """
+        deprecated. use set_value
+        """
+        return self.set_value(property, value)
+
+    def set_value(self, property, value):
         if not self.hasProperty(property):
             raise Exception("Invalid property: {}".format(property))
 
@@ -270,13 +285,19 @@ class Resource(object):
             return
 
         self.variables[property] = value
-        self.variables["timestamp"] = datetime.utcnow()
+        self.variables["timestamp"] = to_timestamp(datetime.utcnow())
 
         self.snapshot()
 
         self.propertyChanged(property, value)
 
     def getValue(self, property):
+        """
+        deprecated. use get_value
+        """
+        return self.get_value(property)
+
+    def get_value(self, property):
         if property not in self.variables:
             print("available properties: {}".format(self.variables))
             raise Exception("Invalid property: {}".format(property))
@@ -291,24 +312,35 @@ class Resource(object):
         if self.data_frame is None:
             self.restore(None)
 
-        self.data_frame.append(self.variables, ignore_index=True)
+        self.data_frame = self.data_frame.append(
+            self.variables, ignore_index=True)
 
-    def restore(self, persist_file):
+    def restore(self, persist_file, properties=None):
         """
         restore data values from filesystem
         """
-        self.data_frame = pd.DataFrame(columns=self.variables.keys())
+
+        if self.data_frame is None:
+            self.data_frame = pd.DataFrame(columns=self.variables.keys())
 
         if persist_file is not None:
             self.data_frame = pd.read_csv(persist_file,
                                           parse_dates=True,
-                                          infer_datetime_format=True)
+                                          infer_datetime_format=True,
+                                          names=properties)
+
+        if "timestamp" in self.data_frame.columns:
+            self.data_frame = self.data_frame.set_index("timestamp")
 
     def persist(self, persist_file):
         if self.data_frame is None:
             raise ValueError("Resource.data_frame is None")
 
         self.data_frame.to_csv(persist_file, mode='w', index=False)
+
+    @property
+    def dataframe(self):
+        return self.data_frame
 
     @asyncio.coroutine
     def poll(self):
@@ -388,3 +420,46 @@ def test_persist_file_not_found():
         has_value_error = True
 
     assert has_value_error
+
+
+def test_snapshot():
+
+    import uuid
+    a1 = Resource(uuid.uuid4().hex, variables=["a"])
+
+    a1.set_value("a", 1)
+    a1.set_value("a", 2)
+    a1.set_value("a", 3)
+    a1.set_value("a", 4)
+
+    print(a1.dataframe.head())
+    print(a1.dataframe.to_numpy()[1])
+
+    vals = a1.dataframe['a'].to_numpy()
+
+    assert vals[0] == 1
+    assert vals[1] == 2
+    assert vals[2] == 3
+    assert vals[3] == 4
+
+
+def test_set_get_value():
+    import uuid
+    a1 = Resource(uuid.uuid4().hex, variables=['a'])
+
+    a1.set_value("a", 1)
+
+    assert a1.get_value('a') == 1
+
+
+def main():
+    test_subscribe2()
+    # test_mqtt_auto_export()
+    test_persist_restore()
+    test_persist_file_not_found()
+    test_set_get_value()
+    test_snapshot()
+
+
+if __name__ == "__main__":
+    main()

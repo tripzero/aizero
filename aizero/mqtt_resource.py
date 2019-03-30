@@ -220,7 +220,8 @@ class MqttWrapper(MqttCommon):
             self._subscribe()
 
         else:
-            raise Exception("Invalid resource type")
+            raise ValueError("Invalid resource type: {}".format(
+                resource.__class__.__name__))
 
         self.whitelist_variables = whitelist_variables
         self.blacklist_variables = blacklist_variables

@@ -9,6 +9,7 @@ import asyncio
 import os
 from aizero import ResourceNotFoundException
 from aizero import get_resource as rsrc
+from aizero import Resource
 
 
 class PrintDot(keras.callbacks.Callback):
@@ -30,23 +31,43 @@ def get_minimum_layer_length(layers):
     return np.min(lengths)
 
 
-def to_dataframe(layers, last=False):
-    d = {}
-    min_features = get_minimum_layer_length(layers)
+def to_dataframe(features, last=False):
+    f = features[0]
 
-    for layer in layers:
-        d[layer.layer_name] = layer.values[-min_features:]
+    if last:
+        raw_dataset = f.dataframe.tail(1)
+    else:
+        raw_dataset = f.dataframe
 
-    raw_dataset = pd.DataFrame(data=d, dtype=np.float)
+    for feature in features:
+        if feature is f:
+            continue
+
+        if last:
+            df = feature.dataframe.tail(1)
+        else:
+            df = feature.dataframe
+
+        # print("merging...")
+        # print(raw_dataset.head())
+        # print(df.head())
+
+        raw_dataset = pd.merge_asof(raw_dataset, df,
+                                    direction="nearest",
+                                    left_index=True,
+                                    right_index=True)
+
+    if "timestamp" in raw_dataset.columns:
+        raw_dataset = raw_dataset.set_index("timestamp")
 
     dataset = raw_dataset.copy()
 
     dataset = dataset.dropna()
 
-    if not last:
-        return dataset
+    # print("final data frame:")
+    # print(dataset.head())
 
-    return dataset[-1:]
+    return dataset
 
 
 def timestamped_layers_to_dataframe(layers, last=False):
@@ -76,14 +97,51 @@ def timestamped_layers_to_dataframe(layers, last=False):
     return dataset
 
 
+class FeatureColumn:
+
+    def __init__(self, name, resource, property_names):
+        self.feature_name = name
+        self.resource = resource
+        self.property_names = property_names
+        self.restore = resource.restore
+        self.persist = resource.persist
+
+    @property
+    def dataframe(self):
+
+        if "timestamp" in self.resource.variables:
+            ps = ["timestamp"]
+        else:
+            ps = []
+
+        if isinstance(self.property_names, list):
+            ps.extend(self.property_names)
+        else:
+            ps.append(self.feature_name)
+
+        df = self.resource.dataframe[ps]
+
+        if "timestamp" in self.resource.variables:
+            df = df.set_index("timestamp")
+
+        return df
+
+    def value(self, pn=None):
+        if pn is None:
+            pn = self.feature_name
+
+        return self.dataframe[pn].to_numpy()[-1]
+
+
 class Learning:
 
     def __init__(self, model_subdir, features,
-                 prediction_feature, **kwargs):
+                 prediction_feature, persist=False, **kwargs):
 
-        self.all_layers = features
+        self.all_features = features
         self.prediction_feature = prediction_feature
         self.stats = None
+        self.persist = persist
 
         try:
             db_root = rsrc("ConfigurationResource").config["db_root"]
@@ -91,15 +149,19 @@ class Learning:
             db_root = "{}/.cache".format(os.environ["HOME"])
 
         self.model_dir = "{}/{}".format(db_root, model_subdir)
-        self.values_cache = "{}/values.db".format(self.model_dir)
+        self.values_cache = "{}".format(self.model_dir)
         self.model_path = "{}/cp.ckpt".format(self.model_dir)
+
+        shape = len(to_dataframe(features).columns)
 
         self.model = keras.Sequential([
             keras.layers.Dense(64, activation=tf.nn.relu,
-                               input_shape=[len(features) - 1]),
+                               input_shape=[shape - 1]),
             keras.layers.Dense(64, activation=tf.nn.relu),
             keras.layers.Dense(1)
         ])
+
+        # optimizer = tf.train.RMSPropOptimizer(0.001, decay=0.0)
         optimizer = tf.keras.optimizers.RMSprop(0.001)
 
         self.model.compile(loss='mean_squared_error',
@@ -107,32 +169,39 @@ class Learning:
                            metrics=['mean_absolute_error',
                                     'mean_squared_error'])
 
-        try:
-            self.model.load_weights(self.model_path)
+        if self.persist:
+            try:
+                self.model.load_weights(self.model_path)
 
-            for feature in self.all_layers:
-                print("restoring layer {} from {}".format(
-                    feature.layer_name, self.values_cache))
-                feature.restore(self.values_cache)
-                print("layer {} has ({}) values".format(
-                    feature.layer_name, len(feature.values)))
+                for feature in self.all_features:
+                    cache_dir = "{}/{}.xz".format(
+                        self.values_cache, feature.feature_name)
+                    print("restoring layer {} from {}".format(
+                        feature.feature_name, cache_dir))
+                    feature.restore(cache_dir)
+                    print("layer {} has ({}) values".format(
+                        feature.feature_name, len(feature.dataframe)))
 
-            self.get_stats(self.to_dataframe(self.all_layers))
+                self.get_stats(self.to_dataframe(self.all_features))
 
-        except Exception as ex:
-            print("WARNING: Failed to load model from {}".format(
-                self.model_path))
-            print("you will need to call train() to create model")
+            except Exception as ex:
+                print(ex)
+                print("WARNING: Failed to load model from {}".format(
+                    self.model_path))
+                print("you will need to call train() to create model")
 
     def get_stats(self, dataset=None):
 
-        if dataset is not None:
+        if dataset is not None or self.stats is None:
 
             p_feature = self.prediction_feature
             stats = dataset.describe()
             stats.pop(p_feature)
             stats = stats.transpose()
             self.stats = stats
+
+        # else:
+        #   self.get_stats(self.to_dataframe(self.all_features))
 
         return self.stats
 
@@ -146,7 +215,10 @@ class Learning:
 
         p_feature = self.prediction_feature
 
-        dataset = self.to_dataframe(self.all_layers)
+        dataset = self.to_dataframe(self.all_features)
+
+        # print("train():")
+        # print(dataset.head())
 
         stats = self.get_stats(dataset)
 
@@ -159,6 +231,9 @@ class Learning:
 
         train_labels = train_data.pop(p_feature)
         normed_train_data = normalize(train_data, stats['mean'], stats['std'])
+
+        # print("normalized data:")
+        # print(normed_test_data.tail())
 
         early_stop = keras.callbacks.EarlyStopping(
             monitor='val_loss', patience=100)
@@ -188,23 +263,33 @@ class Learning:
             print("\ntesting set mean abs Error: {:5.2f}".format(mae))
             self.mean_absolute_error = mae
 
+        # persist all data
+        if self.persist:
+            for feature in self.all_features:
+                cache_dir = "{}/{}.xz".format(
+                    self.values_cache, feature.feature_name)
+                feature.persist(cache_dir)
+
         return history
 
-    def predict(self, replace_layers=None):
+    def predict(self, replace_features=None):
         p_feature = self.prediction_feature
 
-        layers = []
-        replace_layer_names = self.layer_names(replace_layers)
+        features = []
+        replace_feature_names = self.feature_names(replace_features)
 
-        for layer in self.all_layers:
-            if layer.layer_name not in replace_layer_names:
-                layers.append(layer)
+        for feature in self.all_features:
+            if feature.feature_name not in replace_feature_names:
+                features.append(feature)
             else:
-                layers.append(self.get_layer(layer.layer_name, replace_layers))
+                features.append(self.get_feature(feature.feature_name,
+                                                 replace_features))
 
-        dataset = self.to_dataframe(layers, last=True)
+        dataset = self.to_dataframe(features, last=True)
 
         stats = self.get_stats()
+
+        assert stats is not None, "no statistics. probably haven't trained"
 
         dataset.pop(p_feature)
 
@@ -219,7 +304,7 @@ class Learning:
         p_feature = self.prediction_feature
         stats = self.get_stats()
 
-        dataset = self.to_dataframe(self.all_layers)[-10:]
+        dataset = self.to_dataframe(self.all_features)[-10:]
 
         test_dataset = dataset
         test_labels = test_dataset.pop(p_feature)
@@ -231,10 +316,10 @@ class Learning:
 
         return mae
 
-    def get_layer(self, layer_name, layers):
-        for layer in layers:
-            if layer.layer_name == layer_name:
-                return layer
+    def get_feature(self, feature_name, features):
+        for feature in features:
+            if feature_name in feature.dataframe.columns:
+                return feature
 
     def to_dataframe(self, layers, last=False):
         return to_dataframe(layers, last)
@@ -268,7 +353,7 @@ class Learning:
 
     def plot(self):
         import matplotlib.pyplot as plt
-        dataframe = self.to_dataframe(self.all_layers)
+        dataframe = self.to_dataframe(self.all_features)
         self.plot_dataframe(dataframe)
 
         plt.show()
@@ -281,65 +366,60 @@ class Learning:
         else:
             return sns.pairplot(dataframe[filter], diag_kind="kde")
 
-    def layer_names(self, layers):
+    def feature_names(self, features):
         names = []
 
-        if layers is not None:
-            for layer in layers:
-                names.append(layer.layer_name)
+        if features is not None:
+            for feature in features:
+                names.append(feature.feature_name)
 
         return names
 
 
-def layers_from_csv(csv_path, layer_names):
-    from aizero.generic_predictor import FakeLayer
+def features_from_csv(csv_path, feature_names):
 
-    raw_dataset = pd.read_csv(csv_path, names=layer_names,
-                              na_values="?", comment='\t',
-                              sep=" ", skipinitialspace=True)
+    dataset = pd.read_csv(csv_path, names=feature_names,
+                          na_values="?", comment='\t',
+                          sep=" ", skipinitialspace=True)
 
-    dataset = raw_dataset.copy()
+    import uuid
+    feature_rsrc = Resource(uuid.uuid4().hex, variables=feature_names)
+    feature_rsrc.data_frame = dataset
 
-    layers = []
+    features = []
 
-    for key in layer_names:
-        layer = FakeLayer(key, None)
+    for feature in feature_names:
 
-        data = dataset.get(key).values
+        feature_col = FeatureColumn(feature,
+                                    feature_rsrc,
+                                    feature)
 
-        layer.reset_data()
+        features.append(feature_col)
 
-        for value in data:
-            layer.append_value(value)
-
-        layers.append(layer)
-
-    return layers
+    return features
 
 
-def layers_to_csv(csv_path, layers, timestamps=False):
+def layers_to_csv(csv_path, features):
     with open(csv_path, 'w') as f:
-
-        if timestamps:
-            data = timestamped_layers_to_dataframe(layers)
-        else:
-            data = to_dataframe(layers)
+        data = to_dataframe(features)
 
         with open(csv_path, 'w') as f:
             data.to_csv(path_or_buf=f, header=True)
 
 
-def test_create_cp_learning():
-
+def test_create_cp_learning(persist=False):
+    tf.logging.set_verbosity(tf.logging.ERROR)
     dataset_path = keras.utils.get_file(
         "auto-mpg.data", "https://archive.ics.uci.edu/ml/machine-learning-databases/auto-mpg/auto-mpg.data")
 
-    layer_names = ['MPG', 'Cylinders', 'Displacement', 'Horsepower', 'Weight',
-                   'Acceleration', 'Model Year', 'Origin']
+    feature_names = ['MPG', 'Cylinders', 'Displacement', 'Horsepower',
+                     'Weight', 'Acceleration', 'Model Year', 'Origin']
 
-    layers = layers_from_csv(dataset_path, layer_names)
+    features = features_from_csv(dataset_path, feature_names)
 
-    learner = Learning("test_keras", layers, "MPG")
+    print(features[0].dataframe.tail())
+
+    learner = Learning("test_keras", features, "MPG", persist=persist)
 
     # learner.plot()
 
@@ -351,22 +431,27 @@ def test_create_cp_learning():
 
     print("prediction: {}".format(val))
 
-    mpg_layer = learner.get_layer("MPG", learner.all_layers)
-    print("actual: {}".format(mpg_layer.values[-1]))
+    mpg_layer = learner.get_feature("MPG", learner.all_features)
+    print("actual: {}".format(mpg_layer.value("MPG")))
+
+    val2 = learner.predict()
+
+    assert abs(val - val2) <= 10
 
     return val
 
 
-def test_model_from_checkpoint():
+def model_from_checkpoint():
+    tf.logging.set_verbosity(tf.logging.ERROR)
     dataset_path = keras.utils.get_file(
         "auto-mpg.data", "https://archive.ics.uci.edu/ml/machine-learning-databases/auto-mpg/auto-mpg.data")
 
     layer_names = ['MPG', 'Cylinders', 'Displacement', 'Horsepower', 'Weight',
                    'Acceleration', 'Model Year', 'Origin']
 
-    layers = layers_from_csv(dataset_path, layer_names)
+    features = features_from_csv(dataset_path, layer_names)
 
-    learner = Learning("test_keras", layers, "MPG")
+    learner = Learning("test_keras", features, "MPG", persist=True)
 
     # Don't train. should load weights automatically from test_create_cp_learning
 
@@ -374,14 +459,73 @@ def test_model_from_checkpoint():
 
     print("prediction: {}".format(val))
 
-    mpg_layer = learner.get_layer("MPG", learner.all_layers)
-    print("actual: {}".format(mpg_layer.values[-1]))
+    mpg_layer = learner.get_feature("MPG", learner.all_features)
+    print("actual: {}".format(mpg_layer.value("MPG")))
 
     return val
 
 
-if __name__ == "__main__":
-    p1 = test_create_cp_learning()
-    p2 = test_model_from_checkpoint()
+def test_to_dataframe():
+    tf.logging.set_verbosity(tf.logging.ERROR)
+    import uuid
+    import time
 
-    assert p1 == p2
+    r1 = Resource(uuid.uuid4().hex, variables=["a"])
+
+    r1.set_value("a", 1)
+    r1.set_value("a", 2)
+    r1.set_value("a", 3)
+    r1.set_value("a", 4)
+
+    print(r1.dataframe.head())
+
+    time.sleep(1.0)
+
+    r2 = Resource(uuid.uuid4().hex, variables=["b"])
+
+    r2.set_value("b", 1)
+    r2.set_value("b", 2)
+    r2.set_value("b", 3)
+    r2.set_value("b", 4)
+
+    print(r2.dataframe.head())
+
+    fc1 = FeatureColumn('a', r1, r1.variables)
+    fc2 = FeatureColumn('b', r2, r2.variables)
+
+    combined_frame = to_dataframe([fc1, fc2])
+
+    print(combined_frame.head())
+
+    assert "a" in combined_frame.columns
+    assert "b" in combined_frame.columns
+
+    assert len(combined_frame) == 4
+
+    df_last = to_dataframe([fc1, fc2], True)
+
+    print(df_last)
+
+    assert "a" in df_last.columns
+    assert "b" in df_last.columns
+    assert len(df_last) == 1
+
+    assert df_last["a"].to_numpy()[0] == 4
+
+
+def test_restore_model():
+    tf.logging.set_verbosity(tf.logging.ERROR)
+    p1 = test_create_cp_learning(True)
+
+    p2 = model_from_checkpoint()
+
+    assert abs(p2 - p1) < 10
+
+
+def main():
+    tf.logging.set_verbosity(tf.logging.ERROR)
+    test_to_dataframe()
+
+
+if __name__ == "__main__":
+    main()

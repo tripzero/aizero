@@ -9,7 +9,8 @@ from openzwave.network import ZWaveNetwork
 from openzwave.option import ZWaveOption
 from pydispatch import dispatcher
 
-from resource import Resource
+from aizero.resource import Resource
+from aizero.device_resource import DeviceResource
 
 """
 if using docker, here is a good command to get this resource up and running:
@@ -99,6 +100,16 @@ class Network:
 
     def on_node_value_changed(self, node, value):
         self.needs_update = True
+
+
+class DeviceNode(DeviceResource):
+
+    def __init__(self, node):
+        name = node.name
+
+        # TODO: introspect node. Create variables
+
+        super().__init__(name)
 
 
 class Node(Resource):
