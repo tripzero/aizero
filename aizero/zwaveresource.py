@@ -54,10 +54,18 @@ class Network:
     def create_resource_representation_of_nodes(self):
         print("self.network.nodes.values(): {}".format(
             self.network.nodes.values()))
+
         for node in self.network.nodes.values():
             print("creating resource for node: {}".format(node))
             try:
-                self.resources.append(Node(node))
+                # Locks:
+                if len(node.get_doorlocks()) > 1:
+                    print("{} has doorlocks".format(node))
+                    self.resources.append(ZWaveDoorLock(node))
+
+                # Sensors
+                else:
+                    self.resources.append(Node(node))
             except Exception as ex:
                 print("failed to add resource for node {}: {}".format(
                     node, ex))
@@ -112,6 +120,15 @@ class DeviceNode(DeviceResource):
         super().__init__(name)
 
 
+class ZWaveDoorLock(Node):
+
+    def __init__(self, node):
+        super().__init__(node)
+
+    def set_lock(self, val):
+        self.node.set_doorlock(True)
+
+
 class Node(Resource):
 
     def __init__(self, node):
@@ -124,8 +141,6 @@ class Node(Resource):
 
         variables = []
 
-        print("doorlock? {}".format(self.node.get_doorlocks()))
-
         for value in node.values.values():
             print("resource '{}' creating variable for {}".format(
                   name, value.label))
@@ -136,6 +151,7 @@ class Node(Resource):
         self._update()
 
     def _update(self):
+        """ This is called by the Network """
         for value in self.node.values.values():
             self.setValue(value.label, value.data)
 

@@ -3,11 +3,11 @@ import numpy as np
 
 from aizero.resource import Resource, ResourceNotFoundException, MINS
 from aizero.resource import get_resource as gr
-from remoteresource import RemoteRestResource
+from aizero.remoteresource import RemoteRestResource
 
 import asyncio
-from resource_py3 import Py3PollWhileTrue as poll_while_true
-from resource_py3 import Py3Resource as resource_poll
+from aizero.resource_py3 import Py3PollWhileTrue as poll_while_true
+from aizero.resource_py3 import Py3Resource as resource_poll
 
 
 class RuntimePriority:
@@ -606,8 +606,10 @@ class DeviceResource(Resource):
 
     def request_run(self):
         """
-        request that this device run. Returns request id to be used to remove
-        the request.
+        Request that this device run. Returns request id to be used to remove
+        the request.  Device will continue running until all requests have been
+        removed via the remove_request_run() method.
+
         :see remove_request_run
         :returns request id
         """
@@ -624,6 +626,8 @@ class DeviceResource(Resource):
         """
         remove a previous run request made with the request_run() method.
         remove_request_run() will call stop()
+
+        param: id identification handle returned from request_run
         """
 
         if id not in self.run_requests:

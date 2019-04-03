@@ -1,11 +1,10 @@
 from aizero.resource import Resource, MINS
+from aizero.resource_py3 import Py3Resource as resource_poll
 
 from hammock import Hammock
 
 import sys
 import traceback
-
-from resource_py3 import Py3Resource as resource_poll
 
 
 class RemoteRestResource(Resource):
