@@ -50,6 +50,10 @@ class ResourceNameAlreadyTaken(Exception):
     pass
 
 
+class PropertyDoesNotExistException(ValueError):
+    pass
+
+
 class ResourceRequires:
 
     def __init__(self, required_resources, fulfilled_callback=None):
@@ -256,6 +260,10 @@ class Resource(object):
     def hasProperty(self, variable):
         return variable in self.variables
 
+    @property
+    def properties(self):
+        return list(self.variables.keys())
+
     def propertyChanged(self, property, value):
         if property not in self.subscriptions:
             return
@@ -279,13 +287,14 @@ class Resource(object):
 
     def set_value(self, property, value):
         if not self.hasProperty(property):
-            raise Exception("Invalid property: {}".format(property))
+            raise PropertyDoesNotExistException(
+                "Invalid property: {}".format(property))
 
         if self.ignore_same_value and value == self.variables[property]:
             return
 
-        self.variables[property] = value
         self.variables["timestamp"] = to_timestamp(datetime.utcnow())
+        self.variables[property] = value
 
         self.snapshot()
 
@@ -298,9 +307,15 @@ class Resource(object):
         return self.get_value(property)
 
     def get_value(self, property):
+        """
+        get the value for a property
+
+        :param: property name of property
+        """
         if property not in self.variables:
-            print("available properties: {}".format(self.variables))
-            raise Exception("Invalid property: {}".format(property))
+            print("available properties: {}".format(self.variables.keys()))
+            raise PropertyDoesNotExistException(
+                "Invalid property: {}".format(property))
 
         return self.variables[property]
 
@@ -336,7 +351,10 @@ class Resource(object):
         if self.data_frame is None:
             raise ValueError("Resource.data_frame is None")
 
-        self.data_frame.to_csv(persist_file, mode='w', index=False)
+        if "timestamp" in self.data_frame.columns:
+            self.data_frame = self.data_frame.set_index("timestamp")
+
+        self.data_frame.to_csv(persist_file, mode='w')
 
     @property
     def dataframe(self):
@@ -383,29 +401,29 @@ def test_mqtt_auto_export():
 
 
 def test_persist_restore():
-    persist_file = "./resource_test.csv.xz"
+    persist_file = "./resource_test.csv"
 
     if os.path.isfile(persist_file):
         os.remove(persist_file)
 
     a1 = Resource("Resource", variables=["a", "b", "c"])
 
-    a1.setValue("a", 1)
-    a1.setValue("b", 2)
-    a1.setValue("c", 3)
+    a1.set_value("a", 1)
+    a1.set_value("b", 2)
+    a1.set_value("c", 3)
 
     a1.persist(persist_file)
-    print(a1.data_frame)
+    print(a1.dataframe)
 
     a2 = Resource("Resource2", variables=["a", "b", "c"])
 
     a2.restore(persist_file)
-    print(a2.data_frame)
+    print(a2.dataframe)
 
     if os.path.isfile(persist_file):
         os.remove(persist_file)
 
-    assert a1.data_frame.equals(a2.data_frame)
+    assert a1.dataframe.equals(a2.dataframe)
 
 
 def test_persist_file_not_found():
@@ -450,6 +468,15 @@ def test_set_get_value():
     a1.set_value("a", 1)
 
     assert a1.get_value('a') == 1
+
+
+def test_properties():
+    import uuid
+    a1 = Resource(uuid.uuid4().hex, variables=['a', 'b', 'z'])
+
+    assert 'a' in a1.properties
+    assert 'b' in a1.properties
+    assert 'z' in a1.properties
 
 
 def main():
