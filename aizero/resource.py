@@ -358,6 +358,9 @@ class Resource(object):
 
     @property
     def dataframe(self):
+        if self.data_frame is None:
+            raise ValueError("no data in resource")
+
         return self.data_frame
 
     @asyncio.coroutine
@@ -477,6 +480,33 @@ def test_properties():
     assert 'a' in a1.properties
     assert 'b' in a1.properties
     assert 'z' in a1.properties
+
+
+def test_dataframe_exception():
+    import uuid
+    a1 = Resource(uuid.uuid4().hex, variables=['a', 'b', 'z'])
+
+    got_exception = False
+    try:
+        foo = a1.dataframe
+    except ValueError:
+        got_exception = True
+
+    assert got_exception
+
+    a1.set_value('a', 1)
+
+    got_exception = False
+
+    try:
+        foo = a1.dataframe
+    except ValueError:
+        got_exception = True
+
+    print(foo)
+
+    # We set a value therefore, we should not get exception
+    assert not got_exception
 
 
 def main():

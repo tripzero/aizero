@@ -5,6 +5,8 @@ import tensorflow as tf
 from tensorflow import keras
 import numpy as np
 
+from tensorflow.keras.models import model_from_json
+
 import asyncio
 import os
 from aizero import ResourceNotFoundException
@@ -70,31 +72,13 @@ def to_dataframe(features, last=False):
     return dataset
 
 
-def timestamped_layers_to_dataframe(layers, last=False):
-    d = {}
-    min_features = get_minimum_layer_length(layers)
+def features_shape(features):
+    cols = 0
 
-    for layer in layers:
-        try:
-            col_name = "{}_timestamp".format(layer.layer_name)
-            data = layer.resource.data
-            d[col_name] = data[-min_features:, 0]
-            d[layer.layer_name] = data[-min_features:, 1]
-        except Exception as ex:
-            print(ex)
-            print("layer {} does not appear to have timestamp. skipping".format(
-                layer.layer_name))
+    for feature in features:
+        cols += len(feature.columns())
 
-    raw_dataset = pd.DataFrame(data=d, dtype=np.float)
-
-    dataset = raw_dataset.copy()
-
-    dataset = dataset.dropna()
-
-    if not last:
-        return dataset
-
-    return dataset
+    return cols
 
 
 class FeatureColumn:
@@ -105,6 +89,18 @@ class FeatureColumn:
         self.property_names = property_names
         self.restore = resource.restore
         self.persist = resource.persist
+
+    def columns(self):
+
+        try:
+            return self.dataframe.columns
+        except ValueError:
+            pass
+
+        if isinstance(self.property_names, list):
+            return self.property_names
+
+        return [self.property_names]
 
     @property
     def dataframe(self):
@@ -136,7 +132,8 @@ class FeatureColumn:
 class Learning:
 
     def __init__(self, model_subdir, features,
-                 prediction_feature, persist=False, **kwargs):
+                 prediction_feature, persist=False,
+                 model_json=None, **kwargs):
 
         self.all_features = features
         self.prediction_feature = prediction_feature
@@ -152,7 +149,7 @@ class Learning:
         self.values_cache = "{}".format(self.model_dir)
         self.model_path = "{}/cp.ckpt".format(self.model_dir)
 
-        shape = len(to_dataframe(features).columns)
+        shape = features_shape(features)
 
         self.model = keras.Sequential([
             keras.layers.Dense(64, activation=tf.nn.relu,
@@ -160,6 +157,9 @@ class Learning:
             keras.layers.Dense(64, activation=tf.nn.relu),
             keras.layers.Dense(1)
         ])
+
+        if model_json is not None:
+            self.model = model_from_json(model_json)
 
         # optimizer = tf.train.RMSPropOptimizer(0.001, decay=0.0)
         optimizer = tf.keras.optimizers.RMSprop(0.001)
@@ -375,6 +375,9 @@ class Learning:
 
         return names
 
+    def model_json(self):
+        return self.model.to_json()
+
 
 def features_from_csv(csv_path, feature_names):
 
@@ -399,7 +402,7 @@ def features_from_csv(csv_path, feature_names):
     return features
 
 
-def layers_to_csv(csv_path, features):
+def features_to_csv(csv_path, features):
     with open(csv_path, 'w') as f:
         data = to_dataframe(features)
 
@@ -522,9 +525,137 @@ def test_restore_model():
     assert abs(p2 - p1) < 10
 
 
+def test_model_to_json():
+    import json
+
+    l = Learning("/tmp/test_model_subdir", [
+        FeatureColumn("feature1", Resource("Feature1", ["a"]), ['a']),
+        FeatureColumn("feature2", Resource("Feature2", ["ab"]), ['ab'])],
+        "feature2")
+
+    print("model json: {}".format(json.dumps(l.model_json())))
+
+    assert l.model_json() is not None
+
+
+def test_model_from_json():
+    import uuid
+    model_json = """
+    {
+       "class_name":"Sequential",
+       "config":{
+          "name":"sequential_3",
+          "layers":[
+             {
+                "class_name":"Dense",
+                "config":{
+                   "name":"dense_9",
+                   "trainable":true,
+                   "batch_input_shape":[
+                      null,
+                      1
+                   ],
+                   "dtype":"float32",
+                   "units":64,
+                   "activation":"relu",
+                   "use_bias":true,
+                   "kernel_initializer":{
+                      "class_name":"GlorotUniform",
+                      "config":{
+                         "seed":null,
+                         "dtype":"float32"
+                      }
+                   },
+                   "bias_initializer":{
+                      "class_name":"Zeros",
+                      "config":{
+                         "dtype":"float32"
+                      }
+                   },
+                   "kernel_regularizer":null,
+                   "bias_regularizer":null,
+                   "activity_regularizer":null,
+                   "kernel_constraint":null,
+                   "bias_constraint":null
+                }
+             },
+             {
+                "class_name":"Dense",
+                "config":{
+                   "name":"dense_10",
+                   "trainable":true,
+                   "dtype":"float32",
+                   "units":64,
+                   "activation":"relu",
+                   "use_bias":true,
+                   "kernel_initializer":{
+                      "class_name":"GlorotUniform",
+                      "config":{
+                         "seed":null,
+                         "dtype":"float32"
+                      }
+                   },
+                   "bias_initializer":{
+                      "class_name":"Zeros",
+                      "config":{
+                         "dtype":"float32"
+                      }
+                   },
+                   "kernel_regularizer":null,
+                   "bias_regularizer":null,
+                   "activity_regularizer":null,
+                   "kernel_constraint":null,
+                   "bias_constraint":null
+                }
+             },
+             {
+                "class_name":"Dense",
+                "config":{
+                   "name":"dense_11",
+                   "trainable":true,
+                   "dtype":"float32",
+                   "units":1,
+                   "activation":"linear",
+                   "use_bias":true,
+                   "kernel_initializer":{
+                      "class_name":"GlorotUniform",
+                      "config":{
+                         "seed":null,
+                         "dtype":"float32"
+                      }
+                   },
+                   "bias_initializer":{
+                      "class_name":"Zeros",
+                      "config":{
+                         "dtype":"float32"
+                      }
+                   },
+                   "kernel_regularizer":null,
+                   "bias_regularizer":null,
+                   "activity_regularizer":null,
+                   "kernel_constraint":null,
+                   "bias_constraint":null
+                }
+             }
+          ]
+       },
+       "keras_version":"2.2.4-tf",
+       "backend":"tensorflow"
+    }
+    """
+
+    l = Learning("/tmp/test_model_subdir", [
+        FeatureColumn("feature1", Resource(uuid.uuid4().hex, ["a"]), ['a']),
+        FeatureColumn("feature2", Resource(uuid.uuid4().hex, ["ab"]), ['ab'])],
+        "feature2", model_json=model_json)
+
+    assert l.model
+
+
 def main():
     tf.logging.set_verbosity(tf.logging.ERROR)
     test_to_dataframe()
+    test_model_to_json()
 
 
 if __name__ == "__main__":
