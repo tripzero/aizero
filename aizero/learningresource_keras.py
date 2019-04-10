@@ -81,6 +81,25 @@ def features_shape(features):
     return cols
 
 
+class FakeFeatureColumn:
+
+    def __init__(self, name, value):
+        self.feature_name = name
+        self.value = value
+
+        self._dataframe = pd.DataFrame({name: [value]})
+
+    def columns(self):
+        return [self.feature_name]
+
+    @property
+    def dataframe(self):
+        return self._dataframe
+
+    def value(self, pn=None):
+        return self.value
+
+
 class FeatureColumn:
 
     def __init__(self, name, resource, property_names):
@@ -133,7 +152,8 @@ class Learning:
 
     def __init__(self, model_subdir, features,
                  prediction_feature, persist=False,
-                 model_json=None, **kwargs):
+                 model_json=None, model=None, layers=None,
+                 **kwargs):
 
         self.all_features = features
         self.prediction_feature = prediction_feature
@@ -151,23 +171,30 @@ class Learning:
 
         shape = features_shape(features)
 
-        self.model = keras.Sequential([
-            keras.layers.Dense(64, activation=tf.nn.relu,
-                               input_shape=[shape - 1]),
-            keras.layers.Dense(64, activation=tf.nn.relu),
-            keras.layers.Dense(1)
-        ])
+        if model is None:
 
-        if model_json is not None:
-            self.model = model_from_json(model_json)
+            if layers is None:
+                layers = [
+                    keras.layers.Dense(64, activation=tf.nn.relu,
+                                       input_shape=[shape - 1]),
+                    keras.layers.Dense(64, activation=tf.nn.relu),
+                    keras.layers.Dense(1)
+                ]
 
-        # optimizer = tf.train.RMSPropOptimizer(0.001, decay=0.0)
-        optimizer = tf.keras.optimizers.RMSprop(0.001)
+            self.model = keras.Sequential(layers)
 
-        self.model.compile(loss='mean_squared_error',
-                           optimizer=optimizer,
-                           metrics=['mean_absolute_error',
-                                    'mean_squared_error'])
+            if model_json is not None:
+                self.model = model_from_json(model_json)
+
+            # optimizer = tf.train.RMSPropOptimizer(0.001, decay=0.0)
+            optimizer = tf.keras.optimizers.RMSprop(0.001)
+
+            self.model.compile(loss='mean_squared_error',
+                               optimizer=optimizer,
+                               metrics=['mean_absolute_error',
+                                        'mean_squared_error'])
+        else:
+            self.model = model
 
         if self.persist:
             try:
@@ -429,6 +456,9 @@ def test_create_cp_learning(persist=False):
     history = learner.train(and_test=True)
 
     # learner.plot_history(history)
+
+    print("prediction with Cylinders=8:{}".format(
+        learner.predict([FakeFeatureColumn("Cylinders", 8)])))
 
     val = learner.predict()
 
