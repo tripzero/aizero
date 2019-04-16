@@ -10,6 +10,8 @@ from gmqtt.client import Client
 from gmqtt.mqtt.constants import MQTTv311
 from gmqtt.mqtt.handler import MQTTConnectError
 
+import json
+
 
 class MqttTopicConverter:
     topic_conversion_map = {}
@@ -42,6 +44,7 @@ def mqtt_topic_converter(topic):
 
 
 class MqttCommon:
+
     def __init__(self, name=None, broker=None, username=None, password=None,
                  mqtt_protocol_version=MQTTv311):
         self.client = Client(client_id=None)
@@ -273,6 +276,13 @@ class MqttWrapper(MqttCommon):
         if not self.quiet:
             print("MqttWrapper publishing to {}: {}".format(variable, value))
 
+        if isinstance(value, dict):
+            if not self.quiet:
+                print("MqttWrapper converting dict value {} to json".format(
+                    variable))
+
+            value = json.dumps(value)
+
         if self.connected:
             self.client.publish(variable, "{}".format(
                 value), qos=self.qos, retain=self.retain)
@@ -355,6 +365,8 @@ def test_multi_decorator_topic_converter():
     import time
     import json
 
+    Resource.clearResources()
+
     broker = "127.0.0.1"
 
     @mqtt_topic_converter("Test1Resource2/foo")
@@ -401,6 +413,11 @@ def test_multi_decorator_topic_converter():
     assert resource.getValue("baz") == 1
     assert resource.getValue("some_json")["foo"] == 1
 
+    # Test dict object auto-json conversion:
+    publisher3.resource.setValue("some_json", {"foo": 2})
+
+    assert resource.getValue("some_json")["foo"] == 2
+
 
 def test_mqtt_client():
 
@@ -418,7 +435,8 @@ def test_mqtt_client():
 
 def test_delayed_publish():
 
-    publisher = Resource("publisher", ["foo"], export_mqtt=True)
+    publisher = Resource("publisher", ["foo"])
+    publisher.export_mqtt()
 
     subscriber = MqttResource("publisher_sub", "localhost", ["foo"],
                               variable_mqtt_map={"foo": "publisher/foo"})

@@ -87,6 +87,7 @@ class ResourceRequires:
 
 
 class ResourcePropertySubscription:
+
     def __init__(self, resource, variable):
         self.resource = resource
         self.variable = variable
