@@ -27,15 +27,16 @@ class Network:
     ready = "ready"
     failed = "failed"
 
-    def __init__(self, device):
+    def __init__(self, device, logging=False):
 
         options = ZWaveOption(device,
                               config_path="/etc/openzwave",
                               user_path=".", cmd_line="")
+
         options.set_log_file("OZW_Log.log")
         options.set_append_log_file(False)
         options.set_console_output(False)
-        options.set_logging(True)
+        options.set_logging(logging)
         options.lock()
 
         dispatcher.connect(
@@ -59,7 +60,9 @@ class Network:
             print("creating resource for node: {}".format(node))
             try:
                 # Locks:
-                if len(node.get_doorlocks()) > 1:
+                print("has doorlocks? {}".format(len(node.get_doorlocks())))
+
+                if len(node.get_doorlocks()) > 0:
                     print("{} has doorlocks".format(node))
                     self.resources.append(ZWaveDoorLock(node))
 
@@ -75,6 +78,16 @@ class Network:
                 traceback.print_tb(exc_traceback, limit=6, file=sys.stdout)
                 traceback.print_exception(exc_type, exc_value, exc_traceback,
                                           limit=12, file=sys.stdout)
+
+    def resource(self, name):
+        names = []
+        for rsrc in self.resources:
+            names.append(rsrc.name)
+            if rsrc.name == name:
+                return rsrc
+
+        print("{} not found. Available zwave resources: {}".format(
+            name, "\n".join(names)))
 
     @asyncio.coroutine
     def _loop(self):
@@ -110,25 +123,6 @@ class Network:
         self.needs_update = True
 
 
-class DeviceNode(DeviceResource):
-
-    def __init__(self, node):
-        name = node.name
-
-        # TODO: introspect node. Create variables
-
-        super().__init__(name)
-
-
-class ZWaveDoorLock(Node):
-
-    def __init__(self, node):
-        super().__init__(node)
-
-    def set_lock(self, val):
-        self.node.set_doorlock(True)
-
-
 class Node(Resource):
 
     def __init__(self, node):
@@ -137,13 +131,25 @@ class Node(Resource):
         name = node.name
 
         if node.name == "":
-            name = "unknown_id_{}".format(node.node_id)
+            name = "unknown_zwave_node_id_{}".format(node.node_id)
 
         variables = []
 
+        print("{} command classes: {}".format(
+            name, node.command_classes_as_string))
+
+        print("{} command classes: {}".format(
+            name, node.command_classes))
+
         for value in node.values.values():
-            print("resource '{}' creating variable for {}".format(
-                  name, value.label))
+            print("resource '{}' creating variable for {} ({})".format(
+                  name, value.label, value.command_class))
+            print("value type: {}".format(value.type))
+            print("value min: {}".format(value.min))
+            print("value max: {}".format(value.max))
+            print("value help: {}".format(value.help))
+            if value.type == "list":
+                print("value items: {}".format(value.items))
             variables.append(value.label)
 
         super().__init__(name=name, variables=variables)
@@ -156,16 +162,39 @@ class Node(Resource):
             self.setValue(value.label, value.data)
 
 
+class DeviceNode(DeviceResource, Node):
+
+    def __init__(self, node):
+        name = node.name
+
+        Node.__init__(self, node)
+        DeviceResource.__init__(self, name)
+
+
+class ZWaveDoorLock(Node):
+
+    def __init__(self, node):
+        super().__init__(node)
+        self.locks = self.node.get_doorlocks()
+
+    def set_lock(self, val):
+        for lock in self.locks:
+            self.node.set_doorlock(lock, val)
+
+    def get_logs(self):
+        return self.node.get_doorlock_logs()
+
+
 def main():
-    import argparses
+    import argparse
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', dest="device",
-                        help="specify device ie (/dev/ttyACM0.",
+                        help="specify device ie '/dev/ttyACM0'.",
                         default="/dev/ttyACM0")
     args = parser.parse_args()
 
-    network = Network(args.device)
+    network = Network(args.device, logging=False)
 
     @asyncio.coroutine
     def poll_loop():
@@ -178,7 +207,11 @@ def main():
                 print("-------------------")
                 print(rsrc.name)
                 print("-------------------")
-                print(rsrc.variables)
+                # print(rsrc.variables)
+
+                if isinstance(rsrc, ZWaveDoorLock):
+                    for key, log in rsrc.get_logs().items():
+                        print("lock log: {}".format(log.data_as_string))
 
     asyncio.get_event_loop().run_until_complete(poll_loop())
 

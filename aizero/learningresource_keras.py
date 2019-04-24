@@ -81,6 +81,13 @@ def features_shape(features):
     return cols
 
 
+def get_feature(feature_name, features):
+    for feature in features:
+        if (feature_name == feature.feature_name or
+                feature_name in feature.dataframe.columns):
+            return feature
+
+
 class FakeFeatureColumn:
 
     def __init__(self, name, value):
@@ -219,7 +226,7 @@ class Learning:
 
     def get_stats(self, dataset=None):
 
-        if dataset is not None or self.stats is None:
+        if dataset is not None and self.stats is None:
 
             p_feature = self.prediction_feature
             stats = dataset.describe()
@@ -250,6 +257,7 @@ class Learning:
         stats = self.get_stats(dataset)
 
         train_data = dataset
+
         if and_test:
             train_data, test_dataset = self.split_train_test(dataset)
             test_labels = test_dataset.pop(p_feature)
@@ -304,6 +312,11 @@ class Learning:
 
         features = []
         replace_feature_names = self.feature_names(replace_features)
+        all_feature_names = self.feature_names(self.all_features)
+
+        if not np.all(np.isin(replace_feature_names, all_feature_names)):
+            raise ValueError(
+                "replace_feature name must match a model feature")
 
         for feature in self.all_features:
             if feature.feature_name not in replace_feature_names:
@@ -344,9 +357,7 @@ class Learning:
         return mae
 
     def get_feature(self, feature_name, features):
-        for feature in features:
-            if feature_name in feature.dataframe.columns:
-                return feature
+        return get_feature(feature_name, features)
 
     def to_dataframe(self, layers, last=False):
         return to_dataframe(layers, last)
@@ -680,6 +691,45 @@ def test_model_from_json():
         "feature2", model_json=model_json)
 
     assert l.model
+
+
+def test_predict_features_will_replace_features():
+
+    model = Learning("/tmp/test_model_subdir", [
+        FakeFeatureColumn("feature1", 1),
+        FakeFeatureColumn("feature2", 2)],
+        "feature2")
+
+    try:
+        model.predict(replace_features=[
+            FakeFeatureColumn("feature1", 1.1)])
+    except AssertionError:
+        # we expect an assertion error because this model is not trained
+        pass
+
+    ex_hit = False
+    try:
+        model.predict(replace_features=[
+            FakeFeatureColumn("not_feature1", 1.1)])
+    except ValueError:
+        ex_hit = True
+
+    assert ex_hit
+
+
+def test_get_feature():
+    import uuid
+
+    assert get_feature("feature1", [FakeFeatureColumn("feature1", 1)])
+    assert get_feature(
+        "not_feature1", [FakeFeatureColumn("feature1", 1)]) is None
+
+    rsrc = Resource(uuid.uuid4().hex, ["a"])
+    rsrc.set_value("a", 1)
+
+    assert get_feature(
+        "a", [FeatureColumn("feature1", rsrc,
+                            property_names=["a"])])
 
 
 def main():
