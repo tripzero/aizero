@@ -320,6 +320,17 @@ class Resource(object):
 
         return self.variables[property]
 
+    def bind_to(self, property, other_resource, other_property=None):
+
+        if other_property is None:
+            other_property = property
+
+        self.subscribe(
+            property,
+            lambda val: other_resource.set_value(other_property, val))
+
+        other_resource.set_value(other_property, self.get_value(property))
+
     def snapshot(self):
         """
         create/update dataframe from current values
@@ -508,6 +519,27 @@ def test_dataframe_exception():
 
     # We set a value therefore, we should not get exception
     assert not got_exception
+
+
+def test_bind_to():
+    import uuid
+
+    a1 = Resource(uuid.uuid4().hex, variables=['a', 'b', 'z'])
+    a2 = Resource(uuid.uuid4().hex, variables=['a', 'b', 'z'])
+
+    a1.bind_to("a", a2)
+
+    a1.set_value("a", 123)
+
+    assert a2.get_value("a") == 123
+
+    a1.bind_to("a", a2, "z")
+
+    assert a2.get_value("z") == 123
+
+    a1.set_value("a", 456)
+
+    assert a2.get_value("z") == 456
 
 
 def main():

@@ -211,7 +211,9 @@ def main():
 
                 if isinstance(rsrc, ZWaveDoorLock):
                     for key, log in rsrc.get_logs().items():
-                        print("lock log: {}".format(log.data_as_string))
+                        print("lock log ({}): {}".format(
+                            rsrc.name,
+                            log.data_as_string))
 
     asyncio.get_event_loop().run_until_complete(poll_loop())
 
