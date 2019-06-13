@@ -194,7 +194,7 @@ class MqttWrapper(MqttCommon):
     Automatically exports resource properties to to mqtt network
     """
 
-    def __init__(self, resource, broker, override_name=None, retain_msgs=True,
+    def __init__(self, resource, broker, override_name=None, retain_msgs=False,
                  qos=0, whitelist_variables=None, blacklist_variables=None,
                  quiet=True, **kwargs):
 
@@ -257,6 +257,12 @@ class MqttWrapper(MqttCommon):
             if value is not None:
                 self.publish(variable, value)
 
+    @asyncio.coroutine
+    def do_async_publish(self, *args, **kwargs):
+        yield from self.wait_until_connected()
+
+        self.client.publish(*args, **kwargs)
+
     def publish(self, variable, value):
         if (self.whitelist_variables is not
                 None and variable not in self.whitelist_variables):
@@ -286,6 +292,10 @@ class MqttWrapper(MqttCommon):
         if self.connected:
             self.client.publish(variable, "{}".format(
                 value), qos=self.qos, retain=self.retain)
+        else:
+            asyncio.get_event_loop().create_task(
+                self.do_async_publish(variable, "{}".format(value),
+                                      qos=self.qos, retain=self.retain))
 
 
 def test_mqtt_wrapper():
@@ -407,7 +417,7 @@ def test_multi_decorator_topic_converter():
     publisher2.resource.setValue("baz", 1)
     publisher3.resource.setValue("some_json", '{"foo" : 1}')
 
-    loop.run_until_complete(asyncio.sleep(10))
+    loop.run_until_complete(asyncio.sleep(5))
 
     assert resource.getValue("foo") == 1
     assert resource.getValue("baz") == 1
@@ -415,6 +425,8 @@ def test_multi_decorator_topic_converter():
 
     # Test dict object auto-json conversion:
     publisher3.resource.setValue("some_json", {"foo": 2})
+
+    loop.run_until_complete(asyncio.sleep(5))
 
     assert resource.getValue("some_json")["foo"] == 2
 

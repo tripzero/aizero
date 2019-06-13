@@ -261,7 +261,6 @@ class DeviceManager(Resource):
             Resource.waitResource(power_source, wait_power_source)
 
         def wait_time_of_use():
-            print("I got time of use resource!")
             gr("TimeOfUse").subscribe("mode", self.time_of_use_changed)
 
         Resource.waitResource("TimeOfUse", wait_time_of_use)

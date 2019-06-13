@@ -1,10 +1,5 @@
 import asyncio
 
-import openzwave
-from openzwave.node import ZWaveNode
-from openzwave.value import ZWaveValue
-from openzwave.scene import ZWaveScene
-from openzwave.controller import ZWaveController
 from openzwave.network import ZWaveNetwork
 from openzwave.option import ZWaveOption
 from pydispatch import dispatcher
@@ -135,21 +130,21 @@ class Node(Resource):
 
         variables = []
 
-        print("{} command classes: {}".format(
-            name, node.command_classes_as_string))
+        # print("{} command classes: {}".format(
+        #    name, node.command_classes_as_string))
 
-        print("{} command classes: {}".format(
-            name, node.command_classes))
+        # print("{} command classes: {}".format(
+        #    name, node.command_classes))
 
         for value in node.values.values():
-            print("resource '{}' creating variable for {} ({})".format(
-                  name, value.label, value.command_class))
-            print("value type: {}".format(value.type))
-            print("value min: {}".format(value.min))
-            print("value max: {}".format(value.max))
-            print("value help: {}".format(value.help))
-            if value.type == "list":
-                print("value items: {}".format(value.items))
+            # print("resource '{}' creating variable for {} ({})".format(
+            #      name, value.label, value.command_class))
+            # print("value type: {}".format(value.type))
+            # print("value min: {}".format(value.min))
+            # print("value max: {}".format(value.max))
+            # print("value help: {}".format(value.help))
+            # if value.type == "list":
+            #    print("value items: {}".format(value.items))
             variables.append(value.label)
 
         super().__init__(name=name, variables=variables)
@@ -177,12 +172,38 @@ class ZWaveDoorLock(Node):
         super().__init__(node)
         self.locks = self.node.get_doorlocks()
 
+    def lock_async(self):
+        asyncio.get_event_loop().create_task(self._do_lock_unlock(True))
+
+    def unlock_async(self):
+        asyncio.get_event_loop().create_task(self._do_lock_unlock(False))
+
+    def set_lock_async(self, val):
+        if val:
+            self.lock_async()
+        else:
+            self.unlock_async()
+
     def set_lock(self, val):
         for lock in self.locks:
             self.node.set_doorlock(lock, val)
 
     def get_logs(self):
         return self.node.get_doorlock_logs()
+
+    @asyncio.coroutine
+    def _do_lock_unlock(self, val):
+        self.set_lock(val)
+        while self.locked is None or self.locked != val:
+            yield from asyncio.sleep(15)
+            print("trying to set lock ({}) to {}".format(self.name, val))
+            self.set_lock(val)
+
+    @property
+    def locked(self):
+        print("{} - locked: {}".format(self.name,
+                                       self.get_value("Locked")))
+        return self.get_value("Locked")
 
 
 def main():

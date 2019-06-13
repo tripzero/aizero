@@ -1,10 +1,32 @@
 import asyncio
 
-from pyHS100 import SmartPlug, SmartDevice, Discover
+from pyHS100 import Discover
 from pyHS100.smartdevice import SmartDeviceException
 
 from aizero.device_resource import DeviceResource
 from aizero.resource import MINS
+
+
+def discover_devices():
+
+    devices = Discover.discover()
+
+    plugs = []
+
+    for key, device in devices.items():
+        plugs.append(
+            KasaPlug(device.alias,
+                     device_name=device.alias,
+                     device=device))
+
+    return plugs
+
+
+def get_kasa_device(alias, devices):
+
+    for device in devices:
+        if device.device_name == alias:
+            return device
 
 
 def get_kasa_plug(alias):
@@ -42,7 +64,7 @@ class KasaPlug(DeviceResource):
 
         asyncio.get_event_loop().create_task(self.process())
 
-        if device_name is not None:
+        if device_name is not None and device is None:
             asyncio.get_event_loop().create_task(self.do_get_kasa_plug())
 
         if device is not None:
@@ -51,6 +73,7 @@ class KasaPlug(DeviceResource):
 
     @asyncio.coroutine
     def do_get_kasa_plug(self):
+        self.device = None
 
         while not self.device:
             self.device = get_kasa_plug(self.device_name)
@@ -127,7 +150,10 @@ class KasaPlug(DeviceResource):
         while True:
             try:
                 self.update()
-            except:
+            except SmartDeviceException:
+                print("KasaPlug error. trying to reconnect")
+                yield from self.do_get_kasa_plug()
+            except Exception:
                 print("error in kasa_resource process()")
                 import sys
                 import traceback
@@ -150,14 +176,9 @@ def test_power_usage_setter():
 def main():
     from pyHS100 import Discover
     from device_resource import DeviceManager
-    dev_man = DeviceManager()
+    DeviceManager()
 
-    devices = Discover.discover()
-
-    plugs = []
-
-    for key, device in devices.items():
-        plugs.append(KasaPlug(device.alias, device))
+    plugs = discover_devices()
 
     @asyncio.coroutine
     def do_stuff(plugs):

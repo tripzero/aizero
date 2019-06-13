@@ -91,14 +91,14 @@ class ResourcePropertySubscription:
     def __init__(self, resource, variable):
         self.resource = resource
         self.variable = variable
-        self._value = resource.getValue(variable)
+        self._value = resource.get_value(variable)
 
     @property
     def value(self):
-        return self.resource.getValue(self.variable)
+        return self.resource.get_value(self.variable)
 
     def __call__(self):
-        return self.resource.getValue(self.variable)
+        return self.resource.get_value(self.variable)
 
 
 class Resource(object):
@@ -397,7 +397,7 @@ def test_mqtt_auto_export():
 
     from aizero.mqtt_resource import MqttResource
 
-    Resource.auto_export_mqtt(True)
+    Resource.auto_export_mqtt(True, mqtt_export_options={"retain_msgs": False})
 
     resource = Resource("MqttResource",
                         ["test1"])
@@ -408,11 +408,39 @@ def test_mqtt_auto_export():
                                                    "MqttResource/test1"})
 
     loop = asyncio.get_event_loop()
+    resource.setValue("test1", "failing")
     loop.run_until_complete(resource_sub.wait_until_connected())
-    resource.setValue("test1", "winning")
     loop.run_until_complete(asyncio.sleep(5))
 
-    assert resource_sub.getValue("test1") == "winning"
+    assert resource_sub.getValue("test1") == "failing"
+
+
+def test_mqtt_late_export():
+
+    from aizero.mqtt_resource import MqttResource
+
+    resource = Resource("MqttResource12312312",
+                        ["test1"])
+
+    resource_sub = MqttResource("MqttResourceSubscriber123123", "localhost",
+                                ["test1"],
+                                variable_mqtt_map={"test1":
+                                                   "MqttResource12312312/test1"})
+
+    loop = asyncio.get_event_loop()
+    resource.setValue("test1", "failing")
+
+    loop.run_until_complete(resource_sub.wait_until_connected())
+
+    assert resource_sub.get_value("test1") != "failing"
+
+    resource.export_mqtt()
+
+    resource.setValue("test1", "winning")
+
+    loop.run_until_complete(asyncio.sleep(5))
+
+    assert resource_sub.get_value("test1") == "winning"
 
 
 def test_persist_restore():
@@ -544,7 +572,7 @@ def test_bind_to():
 
 def main():
     test_subscribe2()
-    # test_mqtt_auto_export()
+    test_mqtt_auto_export()
     test_persist_restore()
     test_persist_file_not_found()
     test_set_get_value()

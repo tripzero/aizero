@@ -1,4 +1,5 @@
-from resource import Resource, MINS
+from aizero.resource import Resource, MINS
+from aizero.resource import ResourceNotFoundException
 """ time_of_use_resource.py
     Determines the current time of use mode.
 
@@ -13,7 +14,7 @@ from datetime import datetime, date
 import traceback
 import sys
 
-from resource_py3 import Py3Resource as resource_poll
+from aizero.resource_py3 import Py3Resource as resource_poll
 
 
 def is_schedule(schedule, cur_date):
@@ -67,12 +68,15 @@ class TimeOfUse(Resource):
     def __init__(self):
         Resource.__init__(self, "TimeOfUse", ["mode", "schedule"])
 
-        config = Resource.resource("ConfigurationResource").config
+        try:
+            config = Resource.resource("ConfigurationResource").config
 
-        self.winter_schedule = config["time_of_use_schedule"]["winter"]
-        self.summer_schedule = config["time_of_use_schedule"]["summer"]
+            self.winter_schedule = config["time_of_use_schedule"]["winter"]
+            self.summer_schedule = config["time_of_use_schedule"]["summer"]
 
-        self.poller = resource_poll(self.update_schedule, MINS(1))
+            self.poller = resource_poll(self.update_schedule, MINS(1))
+        except ResourceNotFoundException:
+            print("TimeOfUse: No configuration resource!")
 
     def update_schedule(self):
         try:
@@ -91,9 +95,9 @@ class TimeOfUse(Resource):
                     self.setValue("mode", mode)
                     break
 
-            print("time_of_use_resource: trying to update time of use mode...")
-            print("time_of_use_resource: time of use mode is: {}".format(
-                self.mode))
+            # print("time_of_use_resource: trying to update mode...")
+            # print("time_of_use_resource: time of use mode is: {}".format(
+            #    self.mode))
 
         except Exception:
             print("failed to determine power usage mode")
