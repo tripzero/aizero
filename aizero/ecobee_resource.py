@@ -450,7 +450,7 @@ class OccupancySensor(Resource):
 
 
 class EcobeeResource(DeviceResource):
-    def __init__(self, power_usage=1750):
+    def __init__(self, occupancy_predictor_name, power_usage=1750):
         DeviceResource.__init__(self, "EcobeeResource",
                                 power_usage=power_usage,
                                 variables=["occupancy",
@@ -462,6 +462,7 @@ class EcobeeResource(DeviceResource):
                                 priority=RuntimePriority.high)
 
         self.occupancy_prediction = False
+        self.occupancy_predictor_name = occupancy_predictor_name
 
         config = Resource.resource("ConfigurationResource").config
 
@@ -480,7 +481,7 @@ class EcobeeResource(DeviceResource):
 
         def wait_resources():
             self.occupancy_predictor = Resource.resource(
-                "OccupancyPredictorResource")
+                self.occupancy_predictor_name)
             self.occupancy_predictor.subscribe(
                 "occupancy", self.occupancy_changed)
 
@@ -489,8 +490,9 @@ class EcobeeResource(DeviceResource):
             self.night_time_resource = Resource.resource("NightTime")
 
         Resource.waitResource(
-            ["OccupancyPredictorResource", "SolarPower", "NightTime"],
-            wait_resources)
+            [self.occupancy_predictor_name,
+             "SolarPower",
+             "NightTime"], wait_resources)
 
         def wait_ble_resource():
             Resource.resource("BleUserResource").subscribe(
@@ -526,7 +528,11 @@ class EcobeeResource(DeviceResource):
         is_night_time = self.night_time_resource.getValue("night_time")
         can_run = self.can_run()
 
-        temp_min, temp_max = self.ecobee_service.get_sensor_min_max()
+        sensor_min, sensor_max = self.ecobee_service.get_sensor_min_max()
+        temp_max = self.ecobee_service.get_sensor_value(
+            sensor_max, "temperature")
+        temp_min = self.ecobee_service.get_sensor_value(
+            sensor_min, "temperature")
         max_room_temp_delta = 4
 
         print("ecobee processing: ")
@@ -572,11 +578,13 @@ class EcobeeResource(DeviceResource):
 
                 print("ecobee: set program 'home'")
 
-            elif (current_program != "circulation" and
-                  self.ecobee_service.get_sensor_value(temp_max, "temperature") -
-                    self.ecobee_service.get_sensor_value(temp_min, "temperature") >
-                  max_room_temp_delta):
-
+            elif (temp_max is not None and
+                  temp_min is not None and
+                  current_program != "circulation" and
+                  temp_max - temp_min > max_room_temp_delta and
+                  self.ecobee_service.get_sensor_value(sensor_max,
+                                                       "occupancy")):
+                print("setting circulation program")
                 self.ecobee_service.set_hold(custom_program_name="circulation",
                                              fan_mode="on")
 

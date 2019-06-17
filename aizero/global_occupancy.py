@@ -3,7 +3,7 @@
 """
 import asyncio
 from numpy import float64
-from .resource import Resource
+from .resource import Resource, MINS
 
 
 class GlobalOccupancy(Resource):
@@ -15,14 +15,17 @@ class GlobalOccupancy(Resource):
 
     @asyncio.coroutine
     def poll(self):
-        self.occupancy = False
+        while True:
+            self.occupancy = False
 
-        for rsrc in Resource.resources:
-            if ("occupancy" in rsrc.variables.keys() and
-                    rsrc.name != self.name):
+            for rsrc in Resource.resources:
+                if ("occupancy" in rsrc.variables.keys() and
+                        rsrc.name != self.name):
 
-                occupancy = rsrc.get_value("occupancy")
-                if occupancy is not None:
-                    self.occupancy |= occupancy
+                    occupancy = rsrc.get_value("occupancy")
+                    if occupancy is not None:
+                        self.occupancy |= occupancy
 
-        self.set_value("occupancy", float64(self.occupancy))
+            self.set_value("occupancy", float64(self.occupancy))
+
+            yield from asyncio.sleep(MINS(3))

@@ -348,8 +348,8 @@ class Resource(object):
         self.data_frame = self.data_frame.append(
             self.variables, ignore_index=True)
 
-        if "timestamp" in self.data_frame.columns:
-            self.data_frame = self.data_frame.set_index("timestamp")
+        # if "timestamp" in self.data_frame.columns:
+        #    self.data_frame = self.data_frame.set_index("timestamp")
 
     def restore(self, persist_file, properties=None):
         """

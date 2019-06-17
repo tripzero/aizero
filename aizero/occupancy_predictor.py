@@ -53,8 +53,7 @@ class OccupancyPredictorResource(DeviceResource):
 
         self.predictors = Learning(model_subdir=self.model_dir,
                                    features=all_features,
-                                   prediction_feature=[
-                                       "occupancy"],
+                                   prediction_feature="occupancy",
                                    persist=True)
 
         self.poller = resource_poll(self.poll_func, MINS(10))

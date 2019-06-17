@@ -70,7 +70,10 @@ class RuntimePolicy:
         A condition can return None, which indicates no action.
     """
 
-    def __init__(self, policy=RuntimePolicies.none, conditions=[]):
+    def __init__(self, policy=RuntimePolicies.none, conditions=None):
+        if conditions is None:
+            conditions = []
+
         self.policy = policy
         self.conditions = conditions
 
@@ -102,9 +105,13 @@ class RuntimePolicy:
 
 class RunIfCanPolicy(RuntimePolicy):
 
-    def __init__(self, conditions=[]):
-        RuntimePolicy.__init__(
-            self, policy=RuntimePolicies.run_if_can, conditions=conditions)
+    def __init__(self, conditions=None):
+        if conditions is None:
+            conditions = []
+
+        super().__init__(policy=RuntimePolicies.run_if_can,
+                         conditions=conditions)
+
         self.conditions.append(self.can_run)
         self.device = None
 
@@ -122,9 +129,12 @@ class DimIfCannotPolicy(RuntimePolicy):
         Dim the light to dim_level if can_run() is False
     """
 
-    def __init__(self, dim_level=50, conditions=[]):
-        RuntimePolicy.__init__(
-            self, policy=RuntimePolicies.dim_if_cannot, conditions=conditions)
+    def __init__(self, dim_level=50, conditions=None):
+        if conditions is None:
+            conditions = []
+
+        super().__init__(policy=RuntimePolicies.dim_if_cannot,
+                         conditions=conditions)
 
         self.dim_level = dim_level
 
@@ -144,7 +154,11 @@ class OffIfUnoccupied(RuntimePolicy):
     """
 
     def __init__(self, occupancy_resource_name, prediction_threshold=0.60,
-                 conditions=[]):
+                 conditions=None):
+
+        if conditions is None:
+            conditions = []
+
         super().__init__(policy=RuntimePolicies.off_if_unoccupied,
                          conditions=conditions)
 
@@ -199,7 +213,10 @@ class LinkDevicePolicy(RuntimePolicy):
     this will too.
     """
 
-    def __init__(self, linked_device_name, conditions=[]):
+    def __init__(self, linked_device_name, conditions=None):
+        if conditions is None:
+            conditions = []
+
         super().__init__(policy=RuntimePolicies.link_device_policy,
                          conditions=conditions)
 
@@ -487,9 +504,9 @@ class DeviceManager(Resource):
 
 class DeviceResource(Resource):
 
-    def __init__(self, name, power_usage=0, runtime_modes=[], variables=[],
-                 priority=None, runtime_policy=[],
-                 device_manager="DeviceManager", resource_args={}):
+    def __init__(self, name, power_usage=0, runtime_modes=None, variables=None,
+                 priority=None, runtime_policy=None,
+                 device_manager="DeviceManager", resource_args=None):
         """ :param power_usage how much power this device consumes in Watts
             :param runtime_modes time-of-use modes this device can run in. if
              runtime_modes == [], device can run in all runtime modes
@@ -500,13 +517,25 @@ class DeviceResource(Resource):
             :param priority the priority of the device. if not set,
              DeviceManager will not manage the device (see RuntimePriority)
         """
+        if runtime_modes is None:
+            runtime_modes = []
+
+        if variables is None:
+            variables = []
+
+        if runtime_policy is None:
+            runtime_policy = []
+
+        if resource_args is None:
+            resource_args = {}
+
         vars = ["power_usage", "runtime_modes", "priority", "running"]
 
         for variable in variables:
             if variable not in vars:
                 vars.append(variable)
 
-        Resource.__init__(self, name, vars, **resource_args)
+        super().__init__(name, vars, **resource_args)
 
         self.update_power_usage(power_usage)
         self._max_power_usage = power_usage
@@ -691,7 +720,10 @@ class RemoteRestDeviceResource(RemoteRestResource, DeviceResource):
         variable_map = {"local_variable_name" : "remote_variable_name"}
     """
 
-    def __init__(self, name, hammock_instance, variable_map={}, **kwargs):
+    def __init__(self, name, hammock_instance, variable_map=None, **kwargs):
+
+        if variable_map is None:
+            variable_map = {}
 
         RemoteRestResource.__init__(self, name, hammock_instance)
 
@@ -816,7 +848,8 @@ def test_occupancy_policy():
 
     off_policy = OffIfUnoccupied(occupancy_resource.name)
 
-    dev1 = DeviceResource("dev1", power_usage=100, device_manager=device_manager,
+    dev1 = DeviceResource("dev1", power_usage=100,
+                          device_manager=device_manager,
                           runtime_policy=[off_policy])
 
     dev1.run()
@@ -827,7 +860,7 @@ def test_occupancy_policy():
 
     occupancy_resource.setValue("occupancy", False)
 
-    assert off_policy.occupancy.value == False
+    assert off_policy.occupancy.value is False
 
     device_manager.process_managed_devices()
 

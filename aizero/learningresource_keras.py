@@ -50,6 +50,8 @@ def to_dataframe(features, last=False):
         else:
             df = feature.dataframe
 
+        df = df.dropna()
+
         try:
             raw_dataset = pd.merge_asof(raw_dataset, df,
                                         direction="nearest",
@@ -266,9 +268,24 @@ class Learning:
         dataset = self.to_dataframe(self.all_features)
 
         # print("train():")
+        # print(dataset.columns)
         # print(dataset.head())
 
         stats = self.get_stats(dataset)
+
+        print("size: {}".format(len(dataset)))
+        if len(dataset) <= 1:
+            print("dataset too small. cannot train yet")
+            return
+
+        # persist all data
+        if self.persist:
+            for feature in self.all_features:
+                if not os.path.exists(self.model_dir):
+                    os.makedirs(self.values_cache)
+                cache_dir = "{}/{}.xz".format(
+                    self.values_cache, feature.feature_name)
+                feature.persist(cache_dir)
 
         train_data = dataset
 
@@ -305,19 +322,15 @@ class Learning:
             epochs=1000, validation_split=0.2, verbose=0,
             callbacks=callbacks)
 
-        if and_test:
-            loss, mae, mse = self.model.evaluate(
-                normed_test_data, test_labels, verbose=0)
+        try:
+            if and_test:
+                loss, mae, mse = self.model.evaluate(
+                    normed_test_data, test_labels, verbose=0)
 
-            print("\ntesting set mean abs Error: {:5.2f}".format(mae))
-            self.mean_absolute_error = mae
-
-        # persist all data
-        if self.persist:
-            for feature in self.all_features:
-                cache_dir = "{}/{}.xz".format(
-                    self.values_cache, feature.feature_name)
-                feature.persist(cache_dir)
+                print("\ntesting set mean abs Error: {:5.2f}".format(mae))
+                self.mean_absolute_error = mae
+        except Exception as ex:
+            print("error while evaluating: {}".format(ex))
 
         return history
 
