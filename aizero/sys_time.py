@@ -4,8 +4,8 @@ import asyncio
 from datetime import datetime, tzinfo
 import dateutil.parser
 
-from resource import Resource, ResourceNotFoundException
-from mqtt_resource import MqttResource, mqtt_topic_converter
+from aizero.resource import Resource, ResourceNotFoundException
+from aizero.mqtt_resource import MqttResource, mqtt_topic_converter
 
 
 @asyncio.coroutine

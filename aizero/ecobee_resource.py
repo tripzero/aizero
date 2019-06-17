@@ -13,17 +13,16 @@ import shelve
 import pytz
 
 import asyncio
-from resource_py3 import Py3Resource as resource_poll
-
+import numpy as np
 import pyecobee as ecobee
 from six.moves import input
 
-from device_resource import DeviceResource, RuntimePriority
-
-from resource import Resource, MINS, HOURS
-from time_of_use_resource import Modes
-from time_of_day_resource import HourOfDayResource, DayOfWeekResource
-from occupancy_predictor import OccupancyPredictorResource
+from aizero.device_resource import DeviceResource, RuntimePriority
+from aizero.occupancy_predictor import OccupancyPredictorResource
+from aizero.resource import Resource, MINS, HOURS
+from aizero.resource_py3 import Py3Resource as resource_poll
+from aizero.time_of_use_resource import Modes
+from aizero.time_of_day_resource import HourOfDayResource, DayOfWeekResource
 
 import tensorflow as tf
 
@@ -46,6 +45,12 @@ class Programs:
     away = "away"
     sleep = "sleep"
     hold = ""
+
+
+class FanMode:
+    on = "on"
+    off = "off"
+    auto = "auto"
 
 
 class Ecobee:
@@ -125,6 +130,10 @@ class Ecobee:
         return self._global_occupancy
 
     @property
+    def fan_mode(self):
+        return self.thermostat.runtime.desired_fan_mode
+
+    @property
     def cooling(self):
         # Assume that if temperature is higher than desired, hvac is running
         return self.temperature >= self.temperature_setpoint_cool
@@ -141,7 +150,9 @@ class Ecobee:
             response.pretty_format())
 
     def set_hold(self, cool_temperature=None,
-                 heat_temperature=None, custom_program_name=None):
+                 heat_temperature=None,
+                 custom_program_name=None,
+                 fan_mode="auto"):
         """
             Sets the hold temperature setpoint(s). Either cool_temperature or
             heat_temperature must be set. Default cool_temperature or
@@ -150,10 +161,6 @@ class Ecobee:
             If custom_program_name is set the program name along with the
             setpoint settings will be saved.
         """
-
-        if (cool_temperature is None and heat_temperature is None):
-            raise Exception(
-                "requires cool_temperature or heat_temperature to be set")
 
         if not cool_temperature:
             cool_temperature = self.temperature_setpoint_cool
@@ -177,7 +184,8 @@ class Ecobee:
                 type="setHold",
                 params={"holdType": "nextTransition",
                         "coolHoldTemp": cool_temperature,
-                        "heatHoldTemp": heat_temperature})])
+                        "heatHoldTemp": heat_temperature,
+                        "fan": fan_mode})])
 
         if response.status.code != 0:
             raise Exception('Failure while executing set_hold:\n{0}'.format(
@@ -244,7 +252,10 @@ class Ecobee:
             traceback.print_exception(exc_type, exc_value, exc_traceback,
                                       limit=6, file=sys.stdout)
 
-        if not len(response.thermostat_list):
+            return
+
+        if (response.thermostat_list is None or
+                not len(response.thermostat_list)):
             raise Exception("No thermostats found")
 
         thermostat = None
@@ -307,6 +318,41 @@ class Ecobee:
                 ret_sensors.append(sensor)
 
         return ret_sensors
+
+    def get_sensor_value(self, sensor_name, capability):
+        sensors = self.thermostat.remote_sensors
+
+        ret_sensors = []
+
+        for sensor in sensors:
+            if sensor_name and sensor.name != sensor_name:
+                continue
+
+            for sensor_capability in sensor.capability:
+                if sensor_capability.type == capability:
+                    return sensor_capability.value
+
+    def get_sensor_min_max(self):
+        sensors = self.get_sensors()
+
+        sensor_temps = []
+
+        for sensor in sensors:
+            for sensor_capability in sensor.capability:
+                if sensor_capability.type == "temperature":
+                    sensor_temps.append(sensor_capability.value)
+
+        smin = np.min(np.array(sensor_temps).astype(np.int))
+        smax = np.max(np.array(sensor_temps).astype(np.int))
+
+        print("min: {}, max: {}".format(smin, smax))
+
+        smin = self.get_sensors(
+            capability="temperature", capability_value=str(smin))[0]
+        smax = self.get_sensors(
+            capability="temperature", capability_value=str(smax))[0]
+
+        return smin, smax
 
     def get_occupancy(self, sensor_name=None):
         sensors = self.thermostat.remote_sensors
@@ -480,6 +526,9 @@ class EcobeeResource(DeviceResource):
         is_night_time = self.night_time_resource.getValue("night_time")
         can_run = self.can_run()
 
+        temp_min, temp_max = self.ecobee_service.get_sensor_min_max()
+        max_room_temp_delta = 4
+
         print("ecobee processing: ")
         print("current_program: {}".format(current_program))
         print("occupancy: {}".format(self.ecobee_service.global_occupancy))
@@ -523,7 +572,18 @@ class EcobeeResource(DeviceResource):
 
                 print("ecobee: set program 'home'")
 
-        # if no one is home AND no one is usually home
+            elif (current_program != "circulation" and
+                  self.ecobee_service.get_sensor_value(temp_max, "temperature") -
+                    self.ecobee_service.get_sensor_value(temp_min, "temperature") >
+                  max_room_temp_delta):
+
+                self.ecobee_service.set_hold(custom_program_name="circulation",
+                                             fan_mode="on")
+
+            elif (current_program == "circulation"):
+                self.ecobee_service.resume_program()
+
+                # if no one is home AND no one is usually home
         elif (not self.ecobee_service.global_occupancy and
               self.occupancy_prediction is False and
               current_program != Programs.away and

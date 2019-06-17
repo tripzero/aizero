@@ -37,7 +37,7 @@ def to_dataframe(features, last=False):
     f = features[0]
 
     if last:
-        raw_dataset = f.dataframe.tail(1)
+        raw_dataset = f.dataframe.tail(1).reset_index(drop=True)
     else:
         raw_dataset = f.dataframe
 
@@ -46,18 +46,27 @@ def to_dataframe(features, last=False):
             continue
 
         if last:
-            df = feature.dataframe.tail(1)
+            df = feature.dataframe.tail(1).reset_index(drop=True)
         else:
             df = feature.dataframe
 
-        # print("merging...")
-        # print(raw_dataset.head())
-        # print(df.head())
-
-        raw_dataset = pd.merge_asof(raw_dataset, df,
-                                    direction="nearest",
-                                    left_index=True,
-                                    right_index=True)
+        try:
+            raw_dataset = pd.merge_asof(raw_dataset, df,
+                                        direction="nearest",
+                                        left_index=True,
+                                        right_index=True)
+        except Exception as ex:
+            print(ex)
+            print(df.tail())
+            print("columns: {}".format(df.columns))
+            print('index: {}'.format(df.index))
+            print("types: {}".format(df.dtypes))
+            print("merge with:")
+            print(raw_dataset.tail())
+            print("columns: {}".format(raw_dataset.columns))
+            print('index: {}'.format(raw_dataset.index))
+            print("types: {}".format(raw_dataset.dtypes))
+            raise ex
 
     if "timestamp" in raw_dataset.columns:
         raw_dataset = raw_dataset.set_index("timestamp")
@@ -122,6 +131,10 @@ class FeatureColumn:
             return self.dataframe.columns
         except ValueError:
             pass
+        """except KeyError as ke:
+            print(self.resource.dataframe.columns)
+            raise ke
+        """
 
         if isinstance(self.property_names, list):
             return self.property_names
@@ -131,7 +144,7 @@ class FeatureColumn:
     @property
     def dataframe(self):
 
-        if "timestamp" in self.resource.variables:
+        if "timestamp" in self.resource.dataframe.columns:
             ps = ["timestamp"]
         else:
             ps = []
@@ -143,7 +156,8 @@ class FeatureColumn:
 
         df = self.resource.dataframe[ps]
 
-        if "timestamp" in self.resource.variables:
+        if ("timestamp" in self.resource.variables and
+                "timestamp" in self.resource.dataframe.columns):
             df = df.set_index("timestamp")
 
         return df

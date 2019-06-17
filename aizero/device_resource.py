@@ -561,7 +561,7 @@ class DeviceResource(Resource):
         else:
             self._runtime_policy = value
 
-        if self.device_manager:
+        if self.device_manager and value:
             self.device_manager.register_managed_device(self)
 
     def running(self):
@@ -772,7 +772,7 @@ def test_main():
         device_high_too_much_power, power_delta)
 
     print("kickables: {}".format(kickables))
-    assert kickables != None
+    assert kickables is not None
 
     assert device_none not in device_manager.kickable_devices(
         device_high_too_much_power, power_delta)
@@ -790,8 +790,12 @@ def test_remote():
 
     from hammock import Hammock
 
-    remote_resource = RemoteRestDeviceResource("GreenhouseDeviceManager", Hammock("https://tripzero.reesfamily12.com:8069/DeviceManager/DeviceManager"),
-                                               variable_map={"power_usage": "total_power"}, device_manager=device_manager)
+    remote_resource = RemoteRestDeviceResource(
+        "GreenhouseDeviceManager",
+        Hammock(""),
+        variable_map={
+            "power_usage": "total_power"},
+        device_manager=device_manager)
 
     assert "total_power" in remote_resource.variables
 

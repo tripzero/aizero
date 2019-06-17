@@ -270,6 +270,7 @@ class Resource(object):
             return
 
         callbacks = self.subscriptions[property]
+
         for cb in callbacks:
             try:
                 cb(value)
@@ -292,12 +293,16 @@ class Resource(object):
                 "Invalid property: {}".format(property))
 
         if self.ignore_same_value and value == self.variables[property]:
+            # print("is same value. bailing")
             return
 
         self.variables["timestamp"] = to_timestamp(datetime.utcnow())
         self.variables[property] = value
 
         self.snapshot()
+
+        # print("debug: {} : variable: {}, value: {}, columns: {}".format(
+        #   self.name, property, value, self.dataframe.columns))
 
         self.propertyChanged(property, value)
 
@@ -314,6 +319,7 @@ class Resource(object):
         :param: property name of property
         """
         if property not in self.variables:
+            property("{} not available".format(property))
             print("available properties: {}".format(self.variables.keys()))
             raise PropertyDoesNotExistException(
                 "Invalid property: {}".format(property))
@@ -341,6 +347,9 @@ class Resource(object):
 
         self.data_frame = self.data_frame.append(
             self.variables, ignore_index=True)
+
+        if "timestamp" in self.data_frame.columns:
+            self.data_frame = self.data_frame.set_index("timestamp")
 
     def restore(self, persist_file, properties=None):
         """
