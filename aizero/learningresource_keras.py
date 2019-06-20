@@ -37,20 +37,36 @@ def to_dataframe(features, last=False):
     f = features[0]
 
     if last:
-        raw_dataset = f.dataframe.tail(1).reset_index(drop=True)
+        raw_dataset = f.dataframe.reset_index(drop=True).dropna().tail(1)
+        # print(raw_dataset.dropna())
     else:
-        raw_dataset = f.dataframe
+        raw_dataset = f.dataframe.copy()
+        raw_dataset = raw_dataset.dropna()
+        raw_dataset = raw_dataset.loc[raw_dataset.index.dropna()]
+
+    if len(raw_dataset.index) == 0:
+        print("cannot merge with empty dataframe")
+        return
+
+    # print("dataset size: {}".format(len(raw_dataset)))
 
     for feature in features:
         if feature is f:
             continue
 
         if last:
-            df = feature.dataframe.tail(1).reset_index(drop=True)
+            df = feature.dataframe.reset_index(drop=True).dropna().tail(1)
+            print(df)
         else:
-            df = feature.dataframe
+            df = feature.dataframe.copy()
+            df = df.dropna()
+            df = df.loc[df.index.dropna()]
 
-        df = df.dropna()
+        if len(df.index) == 0:
+            print("cannot merge with empty dataframe")
+            return
+
+        # print("to merge dataset size: {}".format(len(df)))
 
         try:
             raw_dataset = pd.merge_asof(raw_dataset, df,
@@ -73,7 +89,10 @@ def to_dataframe(features, last=False):
     if "timestamp" in raw_dataset.columns:
         raw_dataset = raw_dataset.set_index("timestamp")
 
-    dataset = raw_dataset.copy()
+    dataset = raw_dataset
+
+    # print("dataset pre-dropna:")
+    # print(dataset)
 
     dataset = dataset.dropna()
 
@@ -126,6 +145,7 @@ class FeatureColumn:
         self.property_names = property_names
         self.restore = resource.restore
         self.persist = resource.persist
+        self.snapshot = resource.snapshot
 
     def columns(self):
 
@@ -219,6 +239,9 @@ class Learning:
         else:
             self.model = model
 
+        self.restore()
+
+    def restore(self):
         if self.persist:
             try:
                 self.model.load_weights(self.model_path)
@@ -229,6 +252,8 @@ class Learning:
                     print("restoring layer {} from {}".format(
                         feature.feature_name, cache_dir))
                     feature.restore(cache_dir)
+                    # Need to append any current existing values
+                    # feature.snapshot()
                     print("layer {} has ({}) values".format(
                         feature.feature_name, len(feature.dataframe)))
 
@@ -274,9 +299,6 @@ class Learning:
         stats = self.get_stats(dataset)
 
         print("size: {}".format(len(dataset)))
-        if len(dataset) <= 1:
-            print("dataset too small. cannot train yet")
-            return
 
         # persist all data
         if self.persist:
@@ -286,6 +308,10 @@ class Learning:
                 cache_dir = "{}/{}.xz".format(
                     self.values_cache, feature.feature_name)
                 feature.persist(cache_dir)
+
+        if len(dataset) <= 1:
+            print("dataset too small. cannot train yet")
+            return
 
         train_data = dataset
 
@@ -353,6 +379,9 @@ class Learning:
                                                  replace_features))
 
         dataset = self.to_dataframe(features, last=True)
+
+        if dataset is None:
+            return
 
         stats = self.get_stats()
 
@@ -444,11 +473,12 @@ class Learning:
         return self.model.to_json()
 
 
-def features_from_csv(csv_path, feature_names):
+def features_from_csv(csv_path, feature_names, index=False):
 
     dataset = pd.read_csv(csv_path, names=feature_names,
                           na_values="?", comment='\t',
-                          sep=" ", skipinitialspace=True)
+                          sep=" ", skipinitialspace=True,
+                          index_col=index)
 
     import uuid
     feature_rsrc = Resource(uuid.uuid4().hex, variables=feature_names)
@@ -483,7 +513,7 @@ def test_create_cp_learning(persist=False):
     feature_names = ['MPG', 'Cylinders', 'Displacement', 'Horsepower',
                      'Weight', 'Acceleration', 'Model Year', 'Origin']
 
-    features = features_from_csv(dataset_path, feature_names)
+    features = features_from_csv(dataset_path, feature_names, index=None)
 
     print(features[0].dataframe.tail())
 
@@ -571,7 +601,7 @@ def test_to_dataframe():
     assert "a" in combined_frame.columns
     assert "b" in combined_frame.columns
 
-    assert len(combined_frame) == 4
+    assert len(combined_frame) == 4, print(combined_frame)
 
     df_last = to_dataframe([fc1, fc2], True)
 

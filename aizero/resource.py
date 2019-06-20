@@ -3,6 +3,7 @@ import sys
 import os
 import traceback
 import pandas as pd
+import numpy as np
 from datetime import datetime, timezone
 
 if sys.version_info >= (3, 0):
@@ -345,13 +346,29 @@ class Resource(object):
         if self.data_frame is None:
             self.restore(None)
 
-        self.data_frame = self.data_frame.append(
-            self.variables, ignore_index=True)
+        vars = self.variables.copy()
 
-        # if "timestamp" in self.data_frame.columns:
-        #    self.data_frame = self.data_frame.set_index("timestamp")
+        for k in vars.keys():
+            v = vars[k]
+            if v is None:
+                vars[k] = np.nan
 
-    def restore(self, persist_file, properties=None):
+            # We don't support list types ATM
+            elif isinstance(v, list):
+                vars[k] = np.nan
+
+        ts = None
+        if "timestamp" in self.variables:
+            ts = pd.Index([vars.pop("timestamp")], name="timestamp")
+
+        df = pd.DataFrame(vars, index=ts)
+
+        self.data_frame = self.data_frame.append(df)
+
+        if "timestamp" in self.data_frame.columns:
+            self.data_frame = self.data_frame.set_index("timestamp")
+
+    def restore(self, persist_file, properties=None, converters=None):
         """
         restore data values from filesystem
         """
@@ -363,12 +380,14 @@ class Resource(object):
             self.data_frame = pd.read_csv(persist_file,
                                           parse_dates=True,
                                           infer_datetime_format=True,
-                                          names=properties)
+                                          names=properties,
+                                          converters=converters)
 
         if "timestamp" in self.data_frame.columns:
             self.data_frame = self.data_frame.set_index("timestamp")
 
     def persist(self, persist_file):
+
         if self.data_frame is None:
             raise ValueError("Resource.data_frame is None")
 
@@ -406,7 +425,8 @@ def test_mqtt_auto_export():
 
     from aizero.mqtt_resource import MqttResource
 
-    Resource.auto_export_mqtt(True, mqtt_export_options={"retain_msgs": False})
+    Resource.auto_export_mqtt(True, mqtt_export_options={
+                              "retain_msgs": False})
 
     resource = Resource("MqttResource",
                         ["test1"])
@@ -469,13 +489,21 @@ def test_persist_restore():
 
     a2 = Resource("Resource2", variables=["a", "b", "c"])
 
-    a2.restore(persist_file)
+    def conv(x):
+        try:
+            return int(x)
+        except:
+            pass
+
+    a2.restore(persist_file, converters={"a": conv,
+                                         "b": conv,
+                                         "c": conv})
     print(a2.dataframe)
+
+    assert len(a1.dataframe) == len(a2.dataframe)
 
     if os.path.isfile(persist_file):
         os.remove(persist_file)
-
-    assert a1.dataframe.equals(a2.dataframe)
 
 
 def test_persist_file_not_found():
@@ -495,12 +523,13 @@ def test_persist_file_not_found():
 def test_snapshot():
 
     import uuid
-    a1 = Resource(uuid.uuid4().hex, variables=["a"])
+    a1 = Resource(uuid.uuid4().hex, variables=["a", "b"])
 
     a1.set_value("a", 1)
     a1.set_value("a", 2)
     a1.set_value("a", 3)
     a1.set_value("a", 4)
+    a1.set_value("b", [])
 
     print(a1.dataframe.head())
     print(a1.dataframe.to_numpy()[1])

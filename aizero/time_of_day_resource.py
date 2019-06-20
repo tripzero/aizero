@@ -3,6 +3,7 @@ from numpy import float64
 
 from aizero.resource import MINS, Resource
 from aizero.resource_py3 import Py3Resource as resource_poll
+from .sys_time import get_current_datetime
 
 
 class DayOfWeekResource(Resource):
@@ -13,13 +14,25 @@ class DayOfWeekResource(Resource):
         self.poll_func()
 
     def get_value(self, pn):
-        return float64(datetime.now().date().weekday())
+        return float64(get_current_datetime().date().weekday())
+
+    def set_value(self, pn, value):
+
+        if pn == "day_of_week":
+            try:
+                value.date()
+
+                value = value.date().weekday()
+            except Exception:
+                pass
+
+        super().set_value(pn, value)
 
     def poll_func(self):
         try:
-            print("debug: trying to set day_of_week")
+            #print("debug: trying to set day_of_week")
             self.set_value("day_of_week", self.get_value("day_of_week"))
-            print("day_of_week dataframe: {}".format(self.dataframe))
+            #print("day_of_week dataframe: {}".format(self.dataframe))
 
         except Exception as ex:
             print("failed to set day of week resource: {}".format(ex))
@@ -43,7 +56,7 @@ class HourOfDayResource(Resource):
                 value.time()
 
                 value = HourOfDayResource.hour(value)
-            except:
+            except Exception:
                 pass
 
         super().set_value(pn, value)
@@ -52,7 +65,7 @@ class HourOfDayResource(Resource):
         if self.override_value:
             return super().get_value(pn)
 
-        return HourOfDayResource.hour(datetime.now())
+        return HourOfDayResource.hour(get_current_datetime())
 
     @staticmethod
     def hour(date_time):
@@ -60,7 +73,12 @@ class HourOfDayResource(Resource):
 
     def poll_func(self):
         try:
+
+            # print("debug: trying to set hour_of_day to {}".format(
+            #    self.get_value("hour_of_day")))
             self.set_value("hour_of_day", self.get_value("hour_of_day"))
+            # print("hour_of_day dataframe: {}".format(self.dataframe))
+
         except Exception as ex:
             import sys
             import traceback
@@ -76,7 +94,7 @@ def test_day_of_week():
 
     dow = DayOfWeekResource()
 
-    weekday = datetime.now().date().weekday()
+    weekday = get_current_datetime().date().weekday()
 
     assert weekday == dow.getValue("day_of_week")
 
@@ -86,10 +104,11 @@ def test_hour_of_day():
 
     hod = HourOfDayResource()
 
-    hour = datetime.now().time().hour + round(datetime.now().time().minute / 60, 1)
+    hour = get_current_datetime().time().hour + \
+        round(get_current_datetime().time().minute / 60, 1)
 
     assert hour == hod.getValue("hour_of_day")
-    assert hour == HourOfDayResource.hour(datetime.now())
+    assert hour == HourOfDayResource.hour(get_current_datetime())
 
 
 def test_dataframe_has_timestamp_column():
@@ -99,3 +118,24 @@ def test_dataframe_has_timestamp_column():
 
     assert "timestamp" in dow.dataframe.columns
     assert "timestamp" in hod.dataframe.columns
+
+
+def test_multiple_rows_in_dataframe():
+    Resource.clearResources()
+
+    dow = DayOfWeekResource()
+    hod = HourOfDayResource()
+
+    dow.set_value("day_of_week", 1)
+    dow.set_value("day_of_week", 2)
+    dow.set_value("day_of_week", 3)
+    dow.set_value("day_of_week", 4)
+
+    assert len(dow.dataframe) == 5
+
+    hod.set_value("hour_of_day", 1.2)
+    hod.set_value("hour_of_day", 2.2)
+    hod.set_value("hour_of_day", 1.5)
+    hod.set_value("hour_of_day", 13.1)
+
+    assert len(hod.dataframe) == 5

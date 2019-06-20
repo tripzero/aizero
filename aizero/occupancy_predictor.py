@@ -4,7 +4,7 @@ import traceback
 
 from numpy import float64
 
-from aizero.device_resource import DeviceResource
+from aizero.device_resource import DeviceResource, RunIfCanPolicy
 from aizero.resource import Resource, MINS, HOURS, get_resource
 from aizero.learningresource_keras import *
 from aizero.time_of_day_resource import HourOfDayResource, DayOfWeekResource
@@ -16,10 +16,15 @@ from aizero.resource_py3 import Py3Resource as resource_poll
 class OccupancyPredictorResource(DeviceResource):
     def __init__(self, name="OccupancyPredictorResource",
                  occupancy_resource="", prediction_threshold=0.70):
-        DeviceResource.__init__(self, name,
-                                power_usage=100,
-                                runtime_modes=[Modes.mid_peak, Modes.off_peak],
-                                variables=["occupancy", "prediction"])
+        super().__init__(name,
+                         power_usage=100,
+                         variables=["occupancy", "prediction"])
+        # runtime_modes=[Modes.off_peak],
+
+        self.did_train = False
+
+        self.runtime_policy = RunIfCanPolicy(
+            conditions=[lambda: self.did_train])
 
         self.prediction_threshold = prediction_threshold
 
@@ -108,7 +113,16 @@ class OccupancyPredictorResource(DeviceResource):
     def run(self):
         DeviceResource.run(self)
 
+        self.did_train = True
+
         self.train()
+        """except Exception as ex:
+            print("Failed to train occupancy_predictor {} - {}".format(
+                self.name, ex))
+            raise(ex)
+            self.did_train = False
+            """
+
         self.stop()
 
     def stop(self):
