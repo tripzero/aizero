@@ -307,6 +307,18 @@ class DeviceManager(Resource):
 
         return pigs[np.max(list(pigs.keys()))]
 
+    @property
+    def capacity(self):
+        return self.solar_power
+
+    @property
+    def utilization(self):
+        return round(self.running_power / max(self.solar_power, 1) * 100.0, 1)
+
+    @property
+    def remaining_power_capacity(self):
+        return self.solar_power - self.running_power
+
     def debug_print_capacity(self):
         print("total budget: {}W".format(self.solar_power))
         print("total usage: {}W".format(round(self.running_power), 1))

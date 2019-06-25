@@ -56,7 +56,6 @@ def to_dataframe(features, last=False):
 
         if last:
             df = feature.dataframe.reset_index(drop=True).dropna().tail(1)
-            print(df)
         else:
             df = feature.dataframe.copy()
             df = df.dropna()
@@ -90,10 +89,6 @@ def to_dataframe(features, last=False):
         raw_dataset = raw_dataset.set_index("timestamp")
 
     dataset = raw_dataset
-
-    # print("dataset pre-dropna:")
-    # print(dataset)
-
     dataset = dataset.dropna()
 
     # print("final data frame:")
@@ -165,6 +160,10 @@ class FeatureColumn:
 
     @property
     def dataframe(self):
+        """
+        feature columns returned from will be renamed to feature_name unless
+        property_names is a list
+        """
 
         if "timestamp" in self.resource.dataframe.columns:
             ps = ["timestamp"]
@@ -174,13 +173,18 @@ class FeatureColumn:
         if isinstance(self.property_names, list):
             ps.extend(self.property_names)
         else:
-            ps.append(self.feature_name)
+            ps.append(self.property_names)
 
         df = self.resource.dataframe[ps]
 
         if ("timestamp" in self.resource.variables and
                 "timestamp" in self.resource.dataframe.columns):
             df = df.set_index("timestamp")
+
+        if not isinstance(self.property_names, list):
+            df = df.rename(columns={
+                self.property_names: self.feature_name
+            })
 
         return df
 
@@ -218,9 +222,9 @@ class Learning:
 
             if layers is None:
                 layers = [
-                    keras.layers.Dense(64, activation=tf.nn.relu,
-                                       input_shape=[shape - 1]),
-                    keras.layers.Dense(64, activation=tf.nn.relu),
+                    keras.layers.Dense(64, activation="relu",
+                                       input_shape=(shape - 1,)),
+                    keras.layers.Dense(64, activation="relu"),
                     keras.layers.Dense(1)
                 ]
 
@@ -230,9 +234,15 @@ class Learning:
                 self.model = model_from_json(model_json)
 
             # optimizer = tf.train.RMSPropOptimizer(0.001, decay=0.0)
-            optimizer = tf.keras.optimizers.RMSprop(0.001)
 
-            self.model.compile(loss='mean_squared_error',
+            optimizer = kwargs.get("optimizer",
+                                   tf.keras.optimizers.RMSprop(0.001))
+
+            print("using optimizer: {}".format(optimizer))
+
+            loss = kwargs.get("loss", keras.losses.mean_squared_error)
+
+            self.model.compile(loss=loss,
                                optimizer=optimizer,
                                metrics=['mean_absolute_error',
                                         'mean_squared_error'])
@@ -244,7 +254,8 @@ class Learning:
     def restore(self):
         if self.persist:
             try:
-                self.model.load_weights(self.model_path)
+                # FIXME to reenable loading of checkpoints
+                # self.model.load_weights(self.model_path)
 
                 for feature in self.all_features:
                     cache_dir = "{}/{}.xz".format(
@@ -286,15 +297,15 @@ class Learning:
 
         return train_data, test_dataset
 
-    def train(self, and_test=False, tensorboard=False):
+    def train(self, and_test=False, tensorboard=False, epochs=1000):
 
         p_feature = self.prediction_feature
 
         dataset = self.to_dataframe(self.all_features)
 
-        # print("train():")
+        print("train():")
         # print(dataset.columns)
-        # print(dataset.head())
+        # print(dataset)
 
         stats = self.get_stats(dataset)
 
@@ -322,10 +333,16 @@ class Learning:
                 test_dataset, stats['mean'], stats['std'])
 
         train_labels = train_data.pop(p_feature)
-        normed_train_data = normalize(train_data, stats['mean'], stats['std'])
+
+        try:
+            normed_train_data = normalize(
+                train_data, stats['mean'], stats['std'])
+        except TypeError:
+            print("Error: dataset has incompatible column dtypes (ie, str)")
+            raise TypeError("dataset has incompatible dtypes")
 
         # print("normalized data:")
-        # print(normed_test_data.tail())
+        # print(normed_train_data)
 
         early_stop = keras.callbacks.EarlyStopping(
             monitor='val_loss', patience=100)
@@ -334,18 +351,21 @@ class Learning:
                                                       save_weights_only=True,
                                                       verbose=0)
 
-        callbacks = [early_stop, cp_callback, PrintDot()]
+        # FIXME: reenable callbacks
+        callbacks = [early_stop, PrintDot()]
+        #callbacks = []
 
         if tensorboard:
             from datetime import datetime
             t = datetime.now().time()
+
             tb_callback = keras.callbacks.TensorBoard(
                 log_dir="logs/{}".format(t))
             callbacks.append(tb_callback)
 
         history = self.model.fit(
             normed_train_data, train_labels,
-            epochs=1000, validation_split=0.2, verbose=0,
+            epochs=epochs, validation_split=0.2, verbose=0,
             callbacks=callbacks)
 
         try:
@@ -394,7 +414,11 @@ class Learning:
         print("prediction set:")
         print(dataset)
 
-        return self.model.predict(dataset_norm).flatten()[-1]
+        prediction = self.model.predict(dataset_norm).flatten()
+
+        print("prediction: {}".format(prediction))
+
+        return prediction[-1]
 
     def evaluate(self):
         p_feature = self.prediction_feature
@@ -415,10 +439,12 @@ class Learning:
     def get_feature(self, feature_name, features):
         return get_feature(feature_name, features)
 
-    def to_dataframe(self, layers, last=False):
-        return to_dataframe(layers, last)
+    def to_dataframe(self, features=None, last=False):
+        if features is None:
+            features = self.all_features
+        return to_dataframe(features, last)
 
-    def plot_history(self, history):
+    def plot_history(self, history, output_file="plot_history.png"):
         import matplotlib.pyplot as plt
 
         hist = pd.DataFrame(history.history)
@@ -443,17 +469,20 @@ class Learning:
         #         label='Val Error')
         # plt.ylim([0, 20])
         # plt.legend()
-        plt.show()
+        plt.savefig(output_file)
 
-    def plot(self):
+    def plot(self, output_file="plot.png"):
         import matplotlib.pyplot as plt
         dataframe = self.to_dataframe(self.all_features)
         self.plot_dataframe(dataframe)
 
-        plt.show()
+        plt.savefig(output_file)
 
-    def plot_dataframe(self, dataframe, filter=None):
+    def plot_dataframe(self, dataframe=None, filter=None):
         import seaborn as sns
+
+        if dataframe is None:
+            dataframe = self.to_dataframe(self.all_features)
 
         if filter is None:
             return sns.pairplot(dataframe, diag_kind="kde")
@@ -502,7 +531,7 @@ def features_to_csv(csv_path, features):
         data = to_dataframe(features)
 
         with open(csv_path, 'w') as f:
-            data.to_csv(path_or_buf=f, header=True)
+            data.to_csv(path_or_buf=csv_path, header=True)
 
 
 def test_create_cp_learning(persist=False):
@@ -591,8 +620,8 @@ def test_to_dataframe():
 
     print(r2.dataframe.head())
 
-    fc1 = FeatureColumn('a', r1, r1.variables)
-    fc2 = FeatureColumn('b', r2, r2.variables)
+    fc1 = FeatureColumn('a', r1, "a")
+    fc2 = FeatureColumn('b', r2, "b")
 
     combined_frame = to_dataframe([fc1, fc2])
 
@@ -787,6 +816,22 @@ def test_get_feature():
     assert get_feature(
         "a", [FeatureColumn("feature1", rsrc,
                             property_names=["a"])])
+
+
+def test_uninitialized_resource():
+    import uuid
+
+    r1 = Resource(uuid.uuid4().hex, ["a"])
+    r2 = Resource(uuid.uuid4().hex, ["b"])
+
+    f1 = FeatureColumn("a1", r1, "a")
+    f2 = FeatureColumn("b1", r2, "b")
+
+    l1 = Learning(model_subdir="./test_uninitialized_resource",
+                  features=[f1, f2],
+                  prediction_feature="a1")
+
+    # don't crash here because r1 and r2 do not have any columns set in dataframe
 
 
 def main():

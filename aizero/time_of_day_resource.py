@@ -39,7 +39,7 @@ class DayOfWeekResource(Resource):
 
 
 class HourOfDayResource(Resource):
-    def __init__(self, update_rate=MINS(10)):
+    def __init__(self, update_rate=MINS(1)):
         super().__init__("HourOfDayResource", ["hour_of_day"])
         self.poller = resource_poll(self.poll_func, update_rate)
         self.override_value = False
@@ -73,11 +73,14 @@ class HourOfDayResource(Resource):
 
     def poll_func(self):
         try:
+            hod = HourOfDayResource.hour(get_current_datetime())
 
             # print("debug: trying to set hour_of_day to {}".format(
-            #    self.get_value("hour_of_day")))
-            self.set_value("hour_of_day", self.get_value("hour_of_day"))
-            # print("hour_of_day dataframe: {}".format(self.dataframe))
+            #    hod))
+            self.set_value("hour_of_day", hod)
+            # print("hour_of_day dataframe ({}): \n{}".format(
+            #    len(self.dataframe.index),
+            #    self.dataframe))
 
         except Exception as ex:
             import sys

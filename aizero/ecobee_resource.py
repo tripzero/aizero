@@ -450,7 +450,7 @@ class OccupancySensor(Resource):
 
 
 class EcobeeResource(DeviceResource):
-    def __init__(self, occupancy_predictor_name, power_usage=1750):
+    def __init__(self, occupancy_predictor_name=None, power_usage=1750):
         DeviceResource.__init__(self, "EcobeeResource",
                                 power_usage=power_usage,
                                 variables=["occupancy",
@@ -559,7 +559,8 @@ class EcobeeResource(DeviceResource):
                     current_program != "overbudget"):
 
                 print("we really shouldn't be running hvac right now.")
-                print("solar power is only {}".format(self.solar_power))
+                print("remaining capacity is only {}".format(
+                    self.device_manager.remaining_power_capacity))
                 print("our total usage is estimated: {}".format(
                     self.device_manager.running_power))
 

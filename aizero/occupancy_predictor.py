@@ -23,8 +23,8 @@ class OccupancyPredictorResource(DeviceResource):
 
         self.did_train = False
 
-        self.runtime_policy = RunIfCanPolicy(
-            conditions=[lambda: self.did_train])
+        # self.runtime_policy = RunIfCanPolicy(
+        #    conditions=[lambda: self.did_train])
 
         self.prediction_threshold = prediction_threshold
 
@@ -56,10 +56,21 @@ class OccupancyPredictorResource(DeviceResource):
 
         all_features = [occupancy_feature, day_of_week_feature, hour_feature]
 
+        shape = features_shape(all_features)
+
+        layers = [
+            keras.layers.Dense(64, activation="relu",
+                               input_shape=(shape - 1,)),
+            keras.layers.Dense(64, activation="relu"),
+            keras.layers.Dense(1, activation="sigmoid")
+        ]
+
         self.predictors = Learning(model_subdir=self.model_dir,
                                    features=all_features,
                                    prediction_feature="occupancy",
-                                   persist=True)
+                                   persist=True,
+                                   layers=layers,
+                                   loss="binary_crossentropy")
 
         self.poller = resource_poll(self.poll_func, MINS(10))
         self.poller = resource_poll(self.wait_can_run, HOURS(1))

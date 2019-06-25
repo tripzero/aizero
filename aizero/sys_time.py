@@ -1,8 +1,10 @@
 
-import subprocess
 import asyncio
-from datetime import datetime, tzinfo
 import dateutil.parser
+import pytz
+import subprocess
+
+from datetime import datetime, tzinfo
 
 from aizero.resource import Resource, ResourceNotFoundException
 from aizero.mqtt_resource import MqttResource, mqtt_topic_converter
@@ -10,7 +12,7 @@ from aizero.mqtt_resource import MqttResource, mqtt_topic_converter
 
 @asyncio.coroutine
 def publish_time():
-    sys_time_resource = Resource("Date", ["datetime"])
+    sys_time_resource = Resource("Date", ["datetime", "datetime_utc"])
 
     while True:
         time_str = subprocess.check_output(
@@ -19,6 +21,13 @@ def publish_time():
         time_str = time_str.decode('utf-8').replace("\n", "")
 
         sys_time_resource.setValue("datetime", time_str)
+
+        time_str = subprocess.check_output(
+            ["date", "-I", "seconds", "-u"], shell=True)
+
+        time_str = time_str.decode('utf-8').replace("\n", "")
+
+        sys_time_resource.setValue("datetime_utc", time_str)
 
         yield from asyncio.sleep(60)
 
@@ -37,13 +46,22 @@ class CurrentTimeResource(MqttResource):
         })
 
 
-def get_current_datetime():
+def get_current_datetime(utc=False):
     try:
         cur_time_resource = Resource.resource("CurrentTimeResource")
+
+        if utc:
+            u = cur_time_resource.get_value("datetime_utc").replace(
+                tzinfo=pytz.utc)
+            return u
 
         return cur_time_resource.get_value("datetime")
 
     except ResourceNotFoundException:
+        if utc:
+            u = datetime.utcnow().replace(tzinfo=pytz.utc)
+            return u
+
         return datetime.now()
 
 

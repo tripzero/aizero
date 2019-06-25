@@ -220,7 +220,8 @@ class Resource(object):
         try:
             if isinstance(resource_name, list):
                 for rn in resource_name:
-                    Resource.resource(rn)
+                    if rn is not None:
+                        Resource.resource(rn)
             else:
                 Resource.resource(resource_name)
 
