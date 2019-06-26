@@ -307,7 +307,7 @@ class Learning:
 
         return train_data, test_dataset
 
-    def train(self, and_test=False, tensorboard=False, epochs=1000):
+    def train(self, and_test=False, tensorboard=False, epochs=1000, early_stop=True):
 
         p_feature = self.prediction_feature
 
@@ -362,8 +362,10 @@ class Learning:
                                                       verbose=0)
 
         # FIXME: reenable callbacks
-        callbacks = [early_stop, PrintDot()]
-        #callbacks = []
+        callbacks = [PrintDot()]
+
+        if early_stop:
+            callbacks.append(early_stop)
 
         if tensorboard:
             from datetime import datetime
