@@ -175,7 +175,12 @@ class FeatureColumn:
         else:
             ps.append(self.property_names)
 
-        df = self.resource.dataframe[ps]
+        try:
+            df = self.resource.dataframe[ps]
+        except Exception as ex:
+            print("column search: {}".format(ps))
+            print("dataset: {}".format(self.resource.dataframe))
+            raise ex
 
         if ("timestamp" in self.resource.variables and
                 "timestamp" in self.resource.dataframe.columns):
@@ -235,12 +240,17 @@ class Learning:
 
             # optimizer = tf.train.RMSPropOptimizer(0.001, decay=0.0)
 
-            optimizer = kwargs.get("optimizer",
-                                   tf.keras.optimizers.RMSprop(0.001))
+            optimizer = kwargs.get("optimizer", None)
+
+            if optimizer is None:
+                optimizer = tf.keras.optimizers.RMSprop(0.001)
 
             print("using optimizer: {}".format(optimizer))
 
-            loss = kwargs.get("loss", keras.losses.mean_squared_error)
+            loss = kwargs.get("loss", None)
+
+            if loss is None:
+                loss = keras.losses.mean_squared_error
 
             self.model.compile(loss=loss,
                                optimizer=optimizer,
