@@ -132,6 +132,10 @@ class FakeFeatureColumn:
         return self.value
 
 
+class ReplaceFeatureColumn(FakeFeatureColumn):
+    pass
+
+
 class FeatureColumn:
 
     def __init__(self, name, resource, property_names):
@@ -307,7 +311,8 @@ class Learning:
 
         return train_data, test_dataset
 
-    def train(self, and_test=False, tensorboard=False, epochs=1000, early_stop=True):
+    def train(self, and_test=False, tensorboard=False, epochs=1000,
+              early_stop=True):
 
         p_feature = self.prediction_feature
 

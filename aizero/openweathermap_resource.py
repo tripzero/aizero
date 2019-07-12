@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 from aizero.resource import Resource, MINS, get_resource
 from aizero.resource_py3 import Py3Resource as resource_poll
+from aizero.sys_time import get_current_datetime
 
 
 def last_day_of_month(any_day):
@@ -55,23 +56,10 @@ def hourly_temperature(key, forecast_date, lat, lon):
 
 
 def forecast(key, lat, lon):
-    url = 'https://api.openweathermap.org/data/2.5/forecast?lat={}&lon={}&appid={}&units=metric'.format(
-        lat, lon, key)
-    f = Hammock(url)
+    now = get_current_datetime()
+    day_tomorrow = (now + timedelta(days=1))
 
-    weather = f.GET().json()
-
-    if "list" not in weather:
-        print(url)
-        raise Exception("Invalid API reponse: {}".format(weather))
-
-    fc_days = weather["list"]
-
-    day_tomorrow = (datetime.now() + timedelta(days=1)).day
-
-    for forecast in fc_days:
-        if datetime.fromtimestamp(forecast["dt"]).day == day_tomorrow:
-            return forecast
+    return hourly(key, day_tomorrow, lat, lon)
 
 
 class WeatherResource(Resource):
@@ -97,6 +85,12 @@ class WeatherResource(Resource):
 
     def get_hourly_temperature(self, hour):
         return hourly_temperature(self.key, hour, "Hillsboro")
+
+    def get_forecast(self, forecast_date=None):
+        if forecast_date is None:
+            forecast_date = datetime.now()
+
+        return hourly(self.key, forecast_date, self.lat, self.lon)
 
     def poll_func(self):
 

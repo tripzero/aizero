@@ -18,13 +18,14 @@ class OccupancyPredictorResource(DeviceResource):
                  occupancy_resource="", prediction_threshold=0.70):
         super().__init__(name,
                          power_usage=100,
-                         variables=["occupancy", "prediction"])
-        # runtime_modes=[Modes.off_peak],
+                         variables=["occupancy_prediction",
+                                    "occupancy_prediction_raw"])
+        # runtime_modes = [Modes.off_peak],
 
         self.did_train = False
 
-        # self.runtime_policy = RunIfCanPolicy(
-        #    conditions=[lambda: self.did_train])
+        self.runtime_policy = RunIfCanPolicy(
+            conditions=[lambda: not self.did_train])
 
         self.prediction_threshold = prediction_threshold
 
@@ -40,6 +41,15 @@ class OccupancyPredictorResource(DeviceResource):
 
         Resource.waitResource(
             [occupancy_resource], self.init_predictor)
+
+        asyncio.get_event_loop().create_task(self.reset_train_counter())
+
+    @asyncio.coroutine
+    def reset_train_counter(self):
+        while True:
+            yield from asyncio.sleep(HOURS(12))
+
+            self.did_train = False
 
     def init_predictor(self):
         print("initializing occupancy predictor")
@@ -117,9 +127,10 @@ class OccupancyPredictorResource(DeviceResource):
     def poll_func(self):
         predict_val = self.predict_occupancy()
         if predict_val is not None:
-            self.setValue("occupancy", bool(
+            self.setValue("occupancy_prediction", bool(
                 predict_val > self.prediction_threshold))
-            self.setValue('prediction', float(round(predict_val, 2)))
+            self.setValue('occupancy_prediction_raw',
+                          float(round(predict_val, 2)))
 
     def run(self):
         DeviceResource.run(self)
@@ -220,29 +231,30 @@ def test_occupancy_accuracy():
     with open("occupancy_prediction_accuracy.csv", "w") as f:
         for i in range(num_values):
             try:
-                if values_hour_of_day[i] < hour or values_hour_of_day[i] > hour + 1:
+                if (values_hour_of_day[i] < hour or
+                        values_hour_of_day[i] > hour + 1):
                     continue
 
                 d = datetime(
-                    year=2019, month=12, day=values_day_of_week[i]+1, hour=math.floor(values_hour_of_day[i]))
+                    year=2019, month=12, day=values_day_of_week[i] + 1,
+                    hour=math.floor(values_hour_of_day[i]))
 
                 prediction = op.predict_occupancy(d)
                 occupancy = 0.0
-                if values_occupancy[i] == True:
+                if values_occupancy[i]:
                     occupancy = 1.0
 
-                output_str = "{}, {}, {}, {}, {}\n".format(values_day_of_week[i],
-                                                           values_hour_of_day[i],
-                                                           occupancy,
-                                                           round(
-                    prediction, 2),
-                    abs(occupancy - prediction))
+                output_str = "{}, {}, {}, {}, {}\n".format(
+                    values_day_of_week[i],
+                    values_hour_of_day[i],
+                    occupancy,
+                    round(prediction, 2), abs(occupancy - prediction))
 
                 f.write(output_str)
                 print(output_str)
                 error_rate.append(abs(occupancy - prediction))
 
-            except:
+            except Exception:
                 exc_type, exc_value, exc_traceback = sys.exc_info()
                 traceback.print_tb(exc_traceback, limit=6, file=sys.stdout)
                 traceback.print_exception(exc_type, exc_value, exc_traceback,

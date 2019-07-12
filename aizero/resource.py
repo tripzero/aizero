@@ -34,6 +34,10 @@ def get_resource(resource_name):
     return Resource.resource(resource_name)
 
 
+def has_resource(rsrc_name):
+    return rsrc_name in Resource.getResourcesNames()
+
+
 def to_timestamp(dt):
     """
     :param dt datetime object

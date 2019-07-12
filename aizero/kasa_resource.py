@@ -4,7 +4,7 @@ from pyHS100 import Discover
 from pyHS100.smartdevice import SmartDeviceException
 
 from aizero.device_resource import DeviceResource
-from aizero.resource import MINS
+from aizero.resource import MINS, has_resource
 
 
 def discover_devices():
@@ -14,10 +14,12 @@ def discover_devices():
     plugs = []
 
     for key, device in devices.items():
-        plugs.append(
-            KasaPlug(device.alias,
-                     device_name=device.alias,
-                     device=device))
+
+        if not has_resource(device.alias):
+            plugs.append(
+                KasaPlug(device.alias,
+                         device_name=device.alias,
+                         device=device))
 
     return plugs
 

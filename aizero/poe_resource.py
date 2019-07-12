@@ -98,7 +98,12 @@ class FSTelnetSwitchProtocol:
 
         num_ports = 8
 
-        self.write_str('show poe power')
+        try:
+            self.write_str('show poe power')
+        except BrokenPipeError:
+            # probably lost connection. reconnect
+            self.reconnect()
+            return
 
         try:
 
@@ -172,6 +177,7 @@ class PoeResource(DeviceResource):
             if power is not None:
                 self.update_power_usage(power)
             else:
+                power = 0
                 self.update_power_usage(0)
 
             if power > 0:

@@ -23,6 +23,7 @@ from aizero.resource import Resource, MINS, HOURS
 from aizero.resource_py3 import Py3Resource as resource_poll
 from aizero.time_of_use_resource import Modes
 from aizero.time_of_day_resource import HourOfDayResource, DayOfWeekResource
+from aizero.sys_time import get_current_datetime
 
 import tensorflow as tf
 
@@ -94,7 +95,14 @@ class Ecobee:
             Returns custom program name if the cool_setpoint and
             heat_setpoint match or None
         """
+        print("checking is_custom_program")
+        print("cool point: {}".format(cool_setpoint))
+        print("heat point: {}".format(heat_setpoint))
+
         for program, setpoints in self._custom_program_map.items():
+            print("program: {} cool: {}, heat: {}".format(program,
+                                                          setpoints[0],
+                                                          setpoints[1]))
             if cool_setpoint == setpoints[0] and heat_setpoint == setpoints[1]:
                 return program
 
@@ -170,7 +178,9 @@ class Ecobee:
 
         if custom_program_name:
             self._custom_program_map[custom_program_name] = (
-                cool_temperature, heat_temperature)
+                round(cool_temperature, 2), round(heat_temperature, 2))
+
+            print("custom program map: \n{}".format(self._custom_program_map))
 
         # temperature should be in Celcius. convert to F and multiply by 10
         cool_temperature = int(c_to_f(cool_temperature) * 10)
@@ -276,8 +286,10 @@ class Ecobee:
         self._temperature = f_to_c(
             thermostat.runtime.actual_temperature / 10.0)
         self._humidity = thermostat.runtime.actual_humidity
-        self._setpoint_cool = f_to_c(thermostat.runtime.desired_cool / 10.0)
-        self._setpoint_heat = f_to_c(thermostat.runtime.desired_heat / 10.0)
+        self._setpoint_cool = round(
+            f_to_c(thermostat.runtime.desired_cool / 10.0), 1)
+        self._setpoint_heat = round(
+            f_to_c(thermostat.runtime.desired_heat / 10.0), 1)
         self._running_program = thermostat.program.current_climate_ref
 
         # running program may not be accurate if there is a running hold event
@@ -287,8 +299,8 @@ class Ecobee:
                 self._running_program = event.hold_climate_ref
 
         # finally, a hold might be a custom program, let's check
-        custom_program = self.is_custom_program(
-            self._setpoint_cool, self._setpoint_heat)
+        custom_program = self.is_custom_program(self._setpoint_cool,
+                                                self._setpoint_heat)
 
         if custom_program:
             self._running_program = custom_program
@@ -461,6 +473,9 @@ class EcobeeResource(DeviceResource):
                                            "running_program"],
                                 priority=RuntimePriority.high)
 
+        self.subscribe("temperature", lambda v: self.process())
+        self.subscribe("running_program", lambda v: self.process())
+
         self.occupancy_prediction = False
         self.occupancy_predictor_name = occupancy_predictor_name
 
@@ -483,7 +498,7 @@ class EcobeeResource(DeviceResource):
             self.occupancy_predictor = Resource.resource(
                 self.occupancy_predictor_name)
             self.occupancy_predictor.subscribe(
-                "occupancy", self.occupancy_changed)
+                "occupancy_prediction", self.occupancy_changed)
 
             Resource.resource("SolarPower").subscribe(
                 "current_power", self.solar_power_changed)
@@ -535,6 +550,7 @@ class EcobeeResource(DeviceResource):
             sensor_min, "temperature")
         max_room_temp_delta = 4
 
+        print("{}".format(get_current_datetime()))
         print("ecobee processing: ")
         print("current_program: {}".format(current_program))
         print("occupancy: {}".format(self.ecobee_service.global_occupancy))
@@ -565,7 +581,7 @@ class EcobeeResource(DeviceResource):
                     self.device_manager.running_power))
 
                 self.ecobee_service.set_hold(
-                    self.ecobee_service.temperature_setpoint_cool + 1,
+                    self.ecobee_service.temperature_setpoint_cool + 0.5,
                     self.ecobee_service.temperature_setpoint_heat,
                     custom_program_name="overbudget")
 

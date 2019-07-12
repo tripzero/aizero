@@ -52,6 +52,9 @@ class SolarInsolation(Resource):
         self.lat = get_resource("ConfigurationResource").config["latitude"]
         self.lon = get_resource("ConfigurationResource").config["longitude"]
 
+    def get_solar_radiation(self, date):
+        return get_solar_radiation(self.lat, self.lon, date)
+
     @asyncio.coroutine
     def poll(self):
         while True:
