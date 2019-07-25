@@ -468,7 +468,6 @@ class OccupancySensor(Resource):
 
     @asyncio.coroutine
     def poll(self):
-        #import data_logging as dl
 
         while True:
             if self.ecobee_service and self.ecobee_service.thermostat:
@@ -477,19 +476,21 @@ class OccupancySensor(Resource):
                     self.name, value))
                 self.setValue("occupancy", value)
 
-            prediction = self.prediction_resource.predict_occupancy()
+            """prediction = self.prediction_resource.predict_occupancy()
             print("occupancy sensor {} predicted is now: {}".format(
                 self.name, prediction))
             if prediction is not None:
                 self.setValue("predicted_occupancy", round(prediction, 2))
 
             try:
+                import data_logging as dl
                 dl.log_some_data("{}/occupancy_prediction_{}.json".format(
                     self.prediction_resource.model_dir, self.name),
                     predicted=round(prediction, 2),
                     actual=self.getValue("occupancy"))
             except Exception:
                 pass
+            """
 
             yield from asyncio.sleep(MINS(3))
 

@@ -5,7 +5,7 @@ from pyHS100.smartdevice import SmartDeviceException
 from pyHS100.smartstrip import SmartStrip
 
 from aizero.device_resource import DeviceResource
-from aizero.resource import MINS, has_resource
+from aizero.resource import MINS, has_resource, ResourceNameAlreadyTaken
 
 
 def discover_devices():
@@ -19,15 +19,22 @@ def discover_devices():
         if not has_resource(device.alias):
             if isinstance(device, SmartStrip):
                 for i in range(device.num_children):
-                    plugs.append(
-                        KasaStripPort(device=device,
-                                      plug_index=i))
+
+                    try:
+                        plugs.append(
+                            KasaStripPort(device=device,
+                                          plug_index=i))
+                    except ResourceNameAlreadyTaken:
+                        pass
 
             else:
-                plugs.append(
-                    KasaPlug(device.alias,
-                             device_name=device.alias,
-                             device=device))
+                try:
+                    plugs.append(
+                        KasaPlug(device.alias,
+                                 device_name=device.alias,
+                                 device=device))
+                except ResourceNameAlreadyTaken:
+                    pass
 
     return plugs
 
