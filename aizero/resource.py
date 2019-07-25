@@ -343,6 +343,9 @@ class Resource(object):
 
         other_resource.set_value(other_property, self.get_value(property))
 
+    def bind_from(self, property, other_resource, other_property=None):
+        return other_resource.bind_to(property, self, other_property)
+
     def snapshot(self):
         """
         create/update dataframe from current values

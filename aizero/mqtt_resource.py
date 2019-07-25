@@ -464,6 +464,33 @@ def test_delayed_publish():
     assert subscriber.getValue("foo") == "bar"
 
 
+def test_subscribe():
+
+    Resource.clearResources()
+
+    received = False
+
+    publisher = Resource("publisher234523453", ["foo"])
+    publisher.export_mqtt()
+
+    subscriber = MqttResource("publisher_sub", "localhost", ["foo"],
+                              variable_mqtt_map={
+                              "foo": "publisher234523453/foo"
+                              })
+
+    received = subscriber.subscribe2("foo")
+
+    loop = asyncio.get_event_loop()
+
+    loop.run_until_complete(publisher.mqtt_wrapper.wait_until_connected())
+
+    publisher.set_value("foo", '12345')
+
+    loop.run_until_complete(asyncio.sleep(1))
+
+    assert received.value == '12345'
+
+
 def main():
     test_mqtt_client()
     test_mqtt_wrapper()

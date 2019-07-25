@@ -12,7 +12,7 @@ class MyQResource(DeviceResource):
 
     def __init__(self, device_name, username, passwd, brand="liftmaster"):
 
-        super().__init__(device_name, ["state"])
+        super().__init__(name=device_name, variables=["state"])
 
         self.device = None
 

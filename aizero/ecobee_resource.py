@@ -19,7 +19,8 @@ from six.moves import input
 
 from aizero.device_resource import DeviceResource, RuntimePriority
 from aizero.occupancy_predictor import OccupancyPredictorResource
-from aizero.resource import Resource, MINS, HOURS
+from aizero.resource import Resource, MINS, HOURS, ResourceNameAlreadyTaken
+from aizero.resource import ResourceNotFoundException
 from aizero.resource_py3 import Py3Resource as resource_poll
 from aizero.time_of_use_resource import Modes
 from aizero.time_of_day_resource import HourOfDayResource, DayOfWeekResource
@@ -99,11 +100,14 @@ class Ecobee:
         print("cool point: {}".format(cool_setpoint))
         print("heat point: {}".format(heat_setpoint))
 
-        for program, setpoints in self._custom_program_map.items():
-            print("program: {} cool: {}, heat: {}".format(program,
-                                                          setpoints[0],
-                                                          setpoints[1]))
-            if cool_setpoint == setpoints[0] and heat_setpoint == setpoints[1]:
+        for program, data in self._custom_program_map.items():
+            print("program: {} cool: {}, heat: {}".format(
+                program,
+                data[0],
+                data[1]))
+
+            if (cool_setpoint == data[0] and
+                    heat_setpoint == data[1]):
                 return program
 
     def send_message(self, message):
@@ -160,7 +164,7 @@ class Ecobee:
     def set_hold(self, cool_temperature=None,
                  heat_temperature=None,
                  custom_program_name=None,
-                 fan_mode="auto"):
+                 fan_mode=None):
         """
             Sets the hold temperature setpoint(s). Either cool_temperature or
             heat_temperature must be set. Default cool_temperature or
@@ -178,7 +182,8 @@ class Ecobee:
 
         if custom_program_name:
             self._custom_program_map[custom_program_name] = (
-                round(cool_temperature, 2), round(heat_temperature, 2))
+                cool_temperature,
+                heat_temperature)
 
             print("custom program map: \n{}".format(self._custom_program_map))
 
@@ -187,15 +192,20 @@ class Ecobee:
         heat_temperature = int(c_to_f(heat_temperature) * 10)
 
         reg_val = ecobee.SelectionType.REGISTERED.value
+
+        params = {"holdType": "nextTransition",
+                  "coolHoldTemp": cool_temperature,
+                  "heatHoldTemp": heat_temperature}
+
+        if fan_mode is not None:
+            params["fan"] = fan_mode
+
         response = self.service.update_thermostats(
             ecobee.Selection(selection_type=reg_val,
                              selection_match=''),
             functions=[ecobee.Function(
                 type="setHold",
-                params={"holdType": "nextTransition",
-                        "coolHoldTemp": cool_temperature,
-                        "heatHoldTemp": heat_temperature,
-                        "fan": fan_mode})])
+                params=params)])
 
         if response.status.code != 0:
             raise Exception('Failure while executing set_hold:\n{0}'.format(
@@ -220,7 +230,7 @@ class Ecobee:
 
     def resume_program(self, resume_all=True):
         print("resume_program called")
-        traceback.print_stack(file=sys.stdout)
+        # traceback.print_stack(file=sys.stdout)
         response = self.service.resume_program(resume_all=resume_all)
 
         if response.status.code != 0:
@@ -321,7 +331,15 @@ class Ecobee:
 
             if capability:
                 for sensor_capability in sensor.capability:
+                    # print("searching: {}=={}".format(
+                    #    sensor_capability.type,
+                    #    capability))
                     if sensor_capability.type == capability:
+
+                        # print("checking {}=={}".format(
+                        #    capability_value,
+                        #    sensor_capability.value))
+
                         if (capability_value and
                                 sensor_capability.value != capability_value):
                             continue
@@ -344,8 +362,17 @@ class Ecobee:
                 if sensor_capability.type == capability:
                     return sensor_capability.value
 
-    def get_sensor_min_max(self):
-        sensors = self.get_sensors()
+    def get_sensor_min_max(self, capability_filter=None,
+                           capability_filter_value=None):
+
+        sensors = self.get_sensors(capability=capability_filter,
+                                   capability_value=capability_filter_value)
+
+        if len(sensors) == 0:
+            print("no sensors found {} == {}".format(
+                capability_filter,
+                capability_filter_value))
+            return None, None
 
         sensor_temps = []
 
@@ -419,10 +446,11 @@ class OccupancySensor(Resource):
                  prediction_threshold=0.6):
         Resource.__init__(self, "OccupancySensor_{}".format(
             sensor_name), ["occupancy", "predicted_occupancy"])
+
         self.sensor_name = sensor_name
         self.ecobee_service = ecobee_service
 
-        if not self.ecobee_service:
+        if self.ecobee_service is None:
             # try to grab it from the EcobeeResource
             def wait_ecobee_service():
                 self.ecobee_service = Resource.resource(
@@ -430,12 +458,17 @@ class OccupancySensor(Resource):
 
             Resource.waitResource("EcobeeResource", wait_ecobee_service)
 
+            try:
+                wait_ecobee_service()
+            except ResourceNotFoundException:
+                pass
+
         self.prediction_resource = OccupancyPredictorResource(
             self.name, prediction_threshold=prediction_threshold)
 
     @asyncio.coroutine
     def poll(self):
-        import data_logging as dl
+        #import data_logging as dl
 
         while True:
             if self.ecobee_service and self.ecobee_service.thermostat:
@@ -478,6 +511,7 @@ class EcobeeResource(DeviceResource):
 
         self.occupancy_prediction = False
         self.occupancy_predictor_name = occupancy_predictor_name
+        self.occupancy_predictor = None
 
         config = Resource.resource("ConfigurationResource").config
 
@@ -531,11 +565,27 @@ class EcobeeResource(DeviceResource):
         self.solar_power = value
         self.process()
 
+    def create_occupancy_resources(self):
+        sensors = self.ecobee_service.get_sensors(capability="occupancy")
+
+        for sensor in sensors:
+            try:
+                OccupancySensor(sensor.name)
+            except ResourceNameAlreadyTaken:
+                pass
+
     def process(self):
+        print("ecobee processing: ")
+        print("time: {}".format(get_current_datetime()))
+
         current_program = self.ecobee_service.current_program
         predict_time = (datetime.now() + timedelta(minutes=60))
-        occupancy_prediction_60 = self.occupancy_predictor.predict_occupancy(
-            predict_time)
+
+        occupancy_prediction_60 = None
+
+        if self.occupancy_predictor is not None:
+            occupancy_prediction_60 = self.occupancy_predictor.predict_occupancy(
+                predict_time)
 
         if occupancy_prediction_60 is None:
             return
@@ -543,15 +593,20 @@ class EcobeeResource(DeviceResource):
         is_night_time = self.night_time_resource.getValue("night_time")
         can_run = self.can_run()
 
-        sensor_min, sensor_max = self.ecobee_service.get_sensor_min_max()
-        temp_max = self.ecobee_service.get_sensor_value(
-            sensor_max, "temperature")
-        temp_min = self.ecobee_service.get_sensor_value(
-            sensor_min, "temperature")
-        max_room_temp_delta = 4
+        max_room_temp_delta = 10
 
-        print("{}".format(get_current_datetime()))
-        print("ecobee processing: ")
+        sensor_min, sensor_max = self.ecobee_service.get_sensor_min_max(
+            "occupancy", "true")
+
+        if sensor_min is not None:
+            temp_max = self.ecobee_service.get_sensor_value(
+                sensor_max, "temperature")
+            temp_min = self.ecobee_service.get_sensor_value(
+                sensor_min, "temperature")
+
+            print("min: {} max: {}".format(temp_min, temp_max))
+
+        print("max temp delta: {}".format(max_room_temp_delta))
         print("current_program: {}".format(current_program))
         print("occupancy: {}".format(self.ecobee_service.global_occupancy))
         print("occupancy prediction: {}".format(self.occupancy_prediction))
@@ -561,6 +616,7 @@ class EcobeeResource(DeviceResource):
             round(self.device_manager.running_power, 2)))
         print("can run: {}".format(can_run))
         print("is running: {}".format(self.running()))
+        print("fan mode: {}".format(self.ecobee_service.fan_mode))
 
         # get the typical home setpoints
         if current_program == Programs.home:
@@ -595,18 +651,16 @@ class EcobeeResource(DeviceResource):
 
                 print("ecobee: set program 'home'")
 
-            elif (temp_max is not None and
-                  temp_min is not None and
-                  current_program != "circulation" and
-                  temp_max - temp_min > max_room_temp_delta and
-                  self.ecobee_service.get_sensor_value(sensor_max,
-                                                       "occupancy")):
-                print("setting circulation program")
-                self.ecobee_service.set_hold(custom_program_name="circulation",
-                                             fan_mode="on")
+            if (
+                    temp_max is not None and
+                    temp_min is not None and
+                    temp_max - temp_min > max_room_temp_delta):
 
-            elif (current_program == "circulation"):
-                self.ecobee_service.resume_program()
+                print("setting circulation program")
+                self.ecobee_service.set_hold(fan_mode="on")
+
+            elif (self.ecobee_service.fan_mode == "on"):
+                self.ecobee_service.set_hold(fan_mode="auto")
 
                 # if no one is home AND no one is usually home
         elif (not self.ecobee_service.global_occupancy and
@@ -652,6 +706,8 @@ class EcobeeResource(DeviceResource):
     def poll_func(self):
         try:
             self.ecobee_service.update()
+
+            self.create_occupancy_resources()
 
             self.setValue("occupancy", self.ecobee_service.global_occupancy)
             self.setValue("humidity", self.ecobee_service.humidity)

@@ -2,6 +2,7 @@ import asyncio
 
 from pyHS100 import Discover
 from pyHS100.smartdevice import SmartDeviceException
+from pyHS100.smartstrip import SmartStrip
 
 from aizero.device_resource import DeviceResource
 from aizero.resource import MINS, has_resource
@@ -16,10 +17,17 @@ def discover_devices():
     for key, device in devices.items():
 
         if not has_resource(device.alias):
-            plugs.append(
-                KasaPlug(device.alias,
-                         device_name=device.alias,
-                         device=device))
+            if isinstance(device, SmartStrip):
+                for i in range(device.num_children):
+                    plugs.append(
+                        KasaStripPort(device=device,
+                                      plug_index=i))
+
+            else:
+                plugs.append(
+                    KasaPlug(device.alias,
+                             device_name=device.alias,
+                             device=device))
 
     return plugs
 
@@ -35,6 +43,7 @@ def get_kasa_plug(alias):
     devices = Discover.discover()
 
     for key, device in devices.items():
+
         if device.alias == alias:
             return device
 
@@ -114,8 +123,7 @@ class KasaPlug(DeviceResource):
             super().stop()
 
         if self.has_emeter:
-            emeter_status = self.device.get_emeter_realtime()
-            self.update_power_usage(emeter_status['power'])
+            self.update_power_usage(self.power_usage)
 
     def run(self):
         self.set(True)
@@ -127,8 +135,9 @@ class KasaPlug(DeviceResource):
 
     @property
     def power_usage(self):
-        if self.has_emeter:
-            return self.device.current_consumption()
+        if self.device is not None and self.has_emeter:
+            consumption = self.device.current_consumption()
+            return consumption
 
         return super().power_usage
 
@@ -167,6 +176,40 @@ class KasaPlug(DeviceResource):
             yield from asyncio.sleep(MINS(1))
 
 
+class KasaStripPort(KasaPlug):
+
+    def __init__(self, device, plug_index):
+
+        name = device.get_sysinfo()["children"][plug_index]["alias"]
+
+        super().__init__(name=name,
+                         device_name=device.alias,
+                         device=device)
+
+        self.plug_index = plug_index
+
+    def set(self, val):
+        """
+        Turn on or off the device
+
+        :param val True or False
+        """
+        if not self.device:
+            return
+
+        if val:
+            self.device.turn_on(index=self.plug_index)
+        else:
+            self.device.turn_off(index=self.plug_index)
+
+    @property
+    def power_usage(self):
+        if self.device is not None and self.has_emeter:
+            return self.device.current_consumption(index=self.plug_index)
+
+        return super().power_usage
+
+
 def test_power_usage_setter():
 
     plug = KasaPlug("foo", "bar")
@@ -182,14 +225,26 @@ def main():
 
     plugs = discover_devices()
 
+    for plug in plugs:
+        print("found: {}".format(plug.name))
+
     @asyncio.coroutine
     def do_stuff(plugs):
 
         while True:
+            print("number of plugs: {}".format(len(plugs)))
             for plug in plugs:
                 print("plug {} is running: {}".format(
                     plug.name, plug.running()))
-                yield from asyncio.sleep(MINS(1))
+
+                print("power: {}".format(plug.power_usage))
+
+                try:
+                    print(plug.device.plugs)
+                except Exception:
+                    pass
+
+            yield from asyncio.sleep(MINS(1))
 
     asyncio.get_event_loop().run_until_complete(do_stuff(plugs))
 

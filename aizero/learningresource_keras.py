@@ -367,7 +367,7 @@ class Learning:
                                                       verbose=0)
 
         # FIXME: reenable callbacks
-        callbacks = [PrintDot()]
+        callbacks = [PrintDot(), early_stop]
 
         if early_stop:
             callbacks.append(early_stop)
