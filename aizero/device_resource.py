@@ -162,6 +162,7 @@ class OffIfUnoccupied(RuntimePolicy):
         super().__init__(policy=RuntimePolicies.off_if_unoccupied,
                          conditions=conditions)
 
+        self.checked = False
         self.occupancy = None
         self.predicted_occupancy = None
         self.prediction_threshold = prediction_threshold
@@ -193,7 +194,18 @@ class OffIfUnoccupied(RuntimePolicy):
             # we are ready. no more need for process to do anything
             self.process = self._pass_process
 
+    @asyncio.coroutine
+    def can_run_check_timeout(self):
+        self.checked = True
+
+        yield from asyncio.sleep(MINS(15))
+
+        self.checked = False
+
     def can_run(self):
+        if self.checked:
+            return
+
         is_occupied = self.occupancy.value
         # print("occupied: {}".format(is_occupied))
 
@@ -204,6 +216,7 @@ class OffIfUnoccupied(RuntimePolicy):
                             self.prediction_threshold)
 
         if not is_occupied:
+            asyncio.get_event_loop().create_task(self.can_run_check_timeout())
             return False
 
 
