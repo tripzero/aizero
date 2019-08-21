@@ -69,8 +69,8 @@ class OccupancyPredictorResource(DeviceResource):
         shape = features_shape(all_features)
 
         layers = [
-            keras.layers.Dense(64, activation="relu",
-                               input_shape=(shape - 1,)),
+            keras.layers.LSTM(64, activation="relu",
+                              input_shape=(shape - 1, 1)),
             keras.layers.Dense(64, activation="relu"),
             keras.layers.Dense(1, activation="sigmoid")
         ]
@@ -81,6 +81,8 @@ class OccupancyPredictorResource(DeviceResource):
                                    persist=True,
                                    layers=layers,
                                    loss="binary_crossentropy")
+
+        self.did_train = True
 
         self.poller = resource_poll(self.poll_func, MINS(10))
         self.poller = resource_poll(self.wait_can_run, HOURS(1))
