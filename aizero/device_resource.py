@@ -52,6 +52,11 @@ class RuntimePolicies:
     """
     link_device_policy = "link_device_policy"
 
+    """ Policy: run_if_temperature
+        can_run() is True if temperature is above specified value
+    """
+    run_if_temperature = "run_if_temperature"
+
     @classmethod
     def policy(self, policy_name, **kwargs):
         """
@@ -260,6 +265,33 @@ class LinkDevicePolicy(RuntimePolicy):
 
     def can_run(self):
         return self.linked_device_running.value
+
+
+class RunIfTemperaturePolicy(RuntimePolicy):
+    def __init__(self, sensor_name, set_point, conditions=None):
+        if conditions is None:
+            conditions = []
+
+        super().__init__(policy=RuntimePolicies.run_if_temperature,
+                         conditions=conditions)
+
+        self.set_point = set_point
+        self.tempeature = None
+
+        def wait_resource():
+            self.tempeature = gr(sensor_name).subscribe2("tempeature")
+
+        try:
+            gr(sensor_name)
+            wait_resource()
+
+        except ResourceNotFoundException:
+            Resource.waitResource(sensor_name, wait_resource)
+
+    def can_run(self):
+
+        if self.tempeature is not None:
+            return self.tempeature.value > self.set_point
 
 
 class DeviceManager(Resource):
