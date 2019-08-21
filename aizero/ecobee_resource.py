@@ -445,7 +445,9 @@ class OccupancySensor(Resource):
     def __init__(self, sensor_name, ecobee_service=None,
                  prediction_threshold=0.6):
         Resource.__init__(self, "OccupancySensor_{}".format(
-            sensor_name), ["occupancy", "predicted_occupancy"])
+            sensor_name), ["occupancy",
+                           "predicted_occupancy",
+                           "temperature"])
 
         self.sensor_name = sensor_name
         self.ecobee_service = ecobee_service
@@ -472,9 +474,14 @@ class OccupancySensor(Resource):
         while True:
             if self.ecobee_service and self.ecobee_service.thermostat:
                 value = self.ecobee_service.get_occupancy(self.sensor_name)
-                print("occupancy sensor {} is now: {}".format(
-                    self.name, value))
-                self.setValue("occupancy", value)
+                # print("occupancy sensor {} is now: {}".format(
+                #    self.name, value))
+                self.set_value("occupancy", value)
+
+                temp = self.ecobee_service.get_sensor_value(self.sensor_name,
+                                                            "temperature")
+                if temp is not None:
+                    self.set_value("temperature", f_to_c(float(temp)) / 10.0)
 
             """prediction = self.prediction_resource.predict_occupancy()
             print("occupancy sensor {} predicted is now: {}".format(
