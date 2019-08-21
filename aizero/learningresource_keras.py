@@ -223,7 +223,7 @@ class Learning:
 
         self.model_dir = "{}/{}".format(db_root, model_subdir)
         self.values_cache = "{}".format(self.model_dir)
-        self.model_path = "{}/cp.ckpt".format(self.model_dir)
+        self.model_path = "{}/cp.h5".format(self.model_dir)
 
         shape = features_shape(features)
 
@@ -268,8 +268,7 @@ class Learning:
     def restore(self):
         if self.persist:
             try:
-                # FIXME to reenable loading of checkpoints
-                # self.model.load_weights(self.model_path)
+                self.model.load_weights(self.model_path)
 
                 for feature in self.all_features:
                     cache_dir = "{}/{}.xz".format(
@@ -365,8 +364,6 @@ class Learning:
         cp_callback = keras.callbacks.ModelCheckpoint(self.model_path,
                                                       save_weights_only=True,
                                                       verbose=0)
-
-        # FIXME: reenable callbacks
         callbacks = [PrintDot(), early_stop]
 
         if early_stop:
@@ -394,6 +391,11 @@ class Learning:
                 self.mean_absolute_error = mae
         except Exception as ex:
             print("error while evaluating: {}".format(ex))
+
+        # persist model
+
+        if self.persist:
+            self.model.save_weights(self.model_path)
 
         return history
 
