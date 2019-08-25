@@ -261,6 +261,8 @@ class Resource(object):
         return True
 
     def subscribe2(self, variable):
+        assert self.hasProperty(variable)
+
         subscription = ResourcePropertySubscription(self, variable)
         return subscription
 

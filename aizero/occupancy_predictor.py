@@ -12,6 +12,20 @@ from aizero.sys_time import get_current_datetime
 from aizero.resource_py3 import Py3Resource as resource_poll
 
 
+def lstm_convert_dataset(dataset):
+
+    rows = len(dataset)
+    cols = len(dataset.columns)
+
+    dataset = dataset.to_numpy()
+
+    dataset = np.expand_dims(dataset, axis=0)
+
+    dataset = dataset.reshape((rows, cols, 1))
+
+    return dataset
+
+
 class OccupancyPredictorResource(DeviceResource):
 
     def __init__(self, name=None,
@@ -83,13 +97,12 @@ class OccupancyPredictorResource(DeviceResource):
                                    layers=layers,
                                    loss="binary_crossentropy")
 
-        self.did_train = True
-
         self.poller = resource_poll(self.poll_func, MINS(10))
         self.poller = resource_poll(self.wait_can_run, HOURS(1))
 
     def train(self, and_test=True):
-        self.predictors.train(and_test=and_test)
+        self.predictors.train(and_test=and_test,
+                              convert_func=lstm_convert_dataset)
 
     def predict_occupancy(self, date_to_predict=None):
         """ Return likelyhood that home has at least one human in it
@@ -107,7 +120,8 @@ class OccupancyPredictorResource(DeviceResource):
 
             occupancy = self.predictors.predict(
                 replace_features=[hour_of_day_fl,
-                                  hour_of_week_fl])
+                                  hour_of_week_fl],
+                convert_func=lstm_convert_dataset)
 
             print("predicted occupancy: {}".format(round(occupancy, 2)))
 

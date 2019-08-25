@@ -270,10 +270,11 @@ class RunIfTemperaturePolicy(RuntimePolicy):
                          conditions=conditions)
 
         self.set_point = set_point
-        self.tempeature = None
+        self.temperature = None
 
         def wait_resource():
-            self.tempeature = gr(sensor_name).subscribe2("tempeature")
+            self.temperature = gr(sensor_name).subscribe2("temperature")
+            self.conditions.append(self.can_run)
 
         try:
             gr(sensor_name)
@@ -284,14 +285,14 @@ class RunIfTemperaturePolicy(RuntimePolicy):
 
     def can_run(self):
 
-        if self.tempeature is not None:
-            return self.tempeature.value > self.set_point
+        if self.temperature is not None:
+            return self.temperature.value > self.set_point
 
 
 class DeviceManager(Resource):
 
     def __init__(self, name="DeviceManager", max_power_budget=0,
-                 power_source="SolarPower"):
+                 power_source="SolarPower", debug=False):
         """ max_power_budget is to be used to define the max power budget when
             there is no solar system (ie battery system, or pure-grid system).
 
@@ -301,7 +302,8 @@ class DeviceManager(Resource):
             solar_power is max_power_budget until solar system updates.
         """
 
-        super().__init__(name, ["total_power", "running_devices"])
+        super().__init__(name, ["total_power", "running_devices",
+                                "capacity", "total_capacity"])
 
         self.running_devices = []
         self.managed_devices = []
@@ -309,18 +311,25 @@ class DeviceManager(Resource):
         self.max_power_budget = max_power_budget
         self.solar_power = max_power_budget
         self.time_of_use_mode = None
+        self.debug = debug
 
         def wait_power_source():
             gr(power_source).subscribe(
                 "current_power", self.solar_power_changed)
 
         if not max_power_budget:
-            Resource.waitResource(power_source, wait_power_source)
+            try:
+                wait_power_source()
+            except ResourceNotFoundException:
+                Resource.waitResource(power_source, wait_power_source)
 
         def wait_time_of_use():
             gr("TimeOfUse").subscribe("mode", self.time_of_use_changed)
 
-        Resource.waitResource("TimeOfUse", wait_time_of_use)
+        try:
+            wait_time_of_use()
+        except ResourceNotFoundException:
+            Resource.waitResource("TimeOfUse", wait_time_of_use)
 
         self.poller = resource_poll(self.process_managed_devices, MINS(1))
 
@@ -334,6 +343,7 @@ class DeviceManager(Resource):
         self.process_managed_devices()
 
     def register_managed_device(self, device):
+        self.debug_print("registering managed device: {}".format(device.name))
         if device not in self.managed_devices:
             self.managed_devices.append(device)
             device.subscribe("power_usage", self.device_power_usage_changed)
@@ -359,14 +369,38 @@ class DeviceManager(Resource):
     def remaining_power_capacity(self):
         return self.solar_power - self.running_power
 
+    @property
+    def capcity_percentage(self):
+        return min(round(self.running_power /
+                         max(self.solar_power, 1) * 100.0, 1), 100)
+
     def debug_print_capacity(self):
+        cap_per = self.capcity_percentage
+
         print("total budget: {}W".format(self.solar_power))
         print("total usage: {}W".format(round(self.running_power), 1))
         print("capacity: {}%".format(
-            round(self.running_power / max(self.solar_power, 1) * 100.0, 1)))
+            cap_per))
+
+        self.set_value("capacity", cap_per)
+
+    def debug_print(self, msg):
+        if self.debug:
+            print(msg)
 
     def process_managed_devices(self):
+        cap_per = self.capcity_percentage
+
+        self.set_value("capacity", cap_per)
+        self.set_value("total_capacity", self.capacity)
+
+        self.debug_print("managed devices: {}".format(
+            self.managed_devices_pretty))
+
         for device in self.managed_devices:
+
+            self.debug_print(
+                "processing managed device: {}".format(device.name))
 
             has_any_conditions = False
 
@@ -553,6 +587,14 @@ class DeviceManager(Resource):
 
         return rdp
 
+    @property
+    def managed_devices_pretty(self):
+        rdp = []
+        for device in self.managed_devices:
+            rdp.append(device.name)
+
+        return rdp
+
 
 class DeviceResource(Resource):
 
@@ -637,6 +679,10 @@ class DeviceResource(Resource):
 
     @runtime_policy.setter
     def runtime_policy(self, value):
+        self.set_runtime_policy(value)
+
+    def set_runtime_policy(self, value):
+        print("can has runtime_policy")
         if not isinstance(value, list):
             self._runtime_policy = [value]
         else:

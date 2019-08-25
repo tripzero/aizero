@@ -311,7 +311,10 @@ class Learning:
         return train_data, test_dataset
 
     def train(self, and_test=False, tensorboard=False, epochs=1000,
-              early_stop=True):
+              early_stop=True, convert_func=None):
+        """
+        @param convert_func is used to reshape input data
+        """
 
         p_feature = self.prediction_feature
 
@@ -377,6 +380,9 @@ class Learning:
                 log_dir="logs/{}".format(t))
             callbacks.append(tb_callback)
 
+        if convert_func is not None:
+            normed_train_data = convert_func(normed_train_data)
+
         history = self.model.fit(
             normed_train_data, train_labels,
             epochs=epochs, validation_split=0.2, verbose=0,
@@ -384,6 +390,9 @@ class Learning:
 
         try:
             if and_test:
+                if convert_func is not None:
+                    normed_test_data = convert_func(normed_test_data)
+
                 loss, mae, mse = self.model.evaluate(
                     normed_test_data, test_labels, verbose=0)
 
@@ -399,7 +408,7 @@ class Learning:
 
         return history
 
-    def predict(self, replace_features=None):
+    def predict(self, replace_features=None, convert_func=None):
         p_feature = self.prediction_feature
 
         features = []
@@ -430,8 +439,11 @@ class Learning:
 
         dataset_norm = normalize(dataset, stats['mean'], stats['std'])
 
-        print("prediction set:")
-        print(dataset)
+        # print("prediction set:")
+        # print(dataset)
+
+        if convert_func is not None:
+            dataset_norm = convert_func(dataset_norm)
 
         prediction = self.model.predict(dataset_norm).flatten()
 

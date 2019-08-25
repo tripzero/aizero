@@ -481,7 +481,7 @@ class OccupancySensor(Resource):
                 temp = self.ecobee_service.get_sensor_value(self.sensor_name,
                                                             "temperature")
                 if temp is not None:
-                    self.set_value("temperature", f_to_c(float(temp)) / 10.0)
+                    self.set_value("temperature", f_to_c(float(temp) / 10.0))
 
             """prediction = self.prediction_resource.predict_occupancy()
             print("occupancy sensor {} predicted is now: {}".format(
