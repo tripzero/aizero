@@ -1,0 +1,9 @@
+aiohttp
+astral
+pandas
+pyecobee
+pymyq
+pysolar
+python_openzwave
+tensorflow
+
