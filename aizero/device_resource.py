@@ -154,12 +154,11 @@ class OffIfUnoccupied(RuntimePolicy):
     """
         calls set(False) on device if the assigned OccupancyResource has
         occupancy of False.
-        Requires "occupancy" property be available on resource
-        optional "predicted_occupancy" property will be used if available
+        Requires "occupancy" or "predicted_occupancy" property be available
+        on resource.
     """
 
-    def __init__(self, occupancy_resource_name, prediction_threshold=0.60,
-                 conditions=None):
+    def __init__(self, occupancy_resource_name, conditions=None):
 
         if conditions is None:
             conditions = []
@@ -169,16 +168,16 @@ class OffIfUnoccupied(RuntimePolicy):
 
         self.checked = False
         self.occupancy = None
-        self.predicted_occupancy = None
-        self.prediction_threshold = prediction_threshold
 
         def wait_occupancy():
             self.occupancy_resource = gr(occupancy_resource_name)
-            self.occupancy = self.occupancy_resource.subscribe2("occupancy")
 
             if self.occupancy_resource.hasProperty("predicted_occupancy"):
-                self.predicted_occupancy = self.occupancy_resource.subscribe2(
+                self.occupancy = self.occupancy_resource.subscribe2(
                     "predicted_occupancy")
+            else:
+                self.occupancy = self.occupancy_resource.subscribe2(
+                    "occupancy")
 
         try:
             gr(occupancy_resource_name)
@@ -213,12 +212,6 @@ class OffIfUnoccupied(RuntimePolicy):
 
         is_occupied = self.occupancy.value
         # print("occupied: {}".format(is_occupied))
-
-        if (self.predicted_occupancy and
-                self.predicted_occupancy.value is not None):
-
-            is_occupied |= (self.predicted_occupancy.value >
-                            self.prediction_threshold)
 
         if not is_occupied:
             asyncio.get_event_loop().create_task(self.can_run_check_timeout())
@@ -268,6 +261,7 @@ class LinkDevicePolicy(RuntimePolicy):
 
 
 class RunIfTemperaturePolicy(RuntimePolicy):
+
     def __init__(self, sensor_name, set_point, conditions=None):
         if conditions is None:
             conditions = []
@@ -295,6 +289,7 @@ class RunIfTemperaturePolicy(RuntimePolicy):
 
 
 class DeviceManager(Resource):
+
     def __init__(self, name="DeviceManager", max_power_budget=0,
                  power_source="SolarPower"):
         """ max_power_budget is to be used to define the max power budget when
@@ -507,7 +502,7 @@ class DeviceManager(Resource):
         # print("can_run: over budget amount: {}".format(over_budget_amount))
 
         is_time_of_use_mode = False
-        if self.time_of_use_mode:
+        if self.time_of_use_mode is not None:
             for mode in device.runtime_modes:
                 is_time_of_use_mode |= mode == self.time_of_use_mode
 

@@ -9,18 +9,25 @@ from aizero.resource import Resource, MINS, HOURS, get_resource
 from aizero.learningresource_keras import *
 from aizero.time_of_day_resource import HourOfDayResource, DayOfWeekResource
 from aizero.sys_time import get_current_datetime
-from aizero.time_of_use_resource import Modes
 from aizero.resource_py3 import Py3Resource as resource_poll
 
 
 class OccupancyPredictorResource(DeviceResource):
-    def __init__(self, name="OccupancyPredictorResource",
-                 occupancy_resource="", prediction_threshold=0.70):
-        super().__init__(name,
+
+    def __init__(self, name=None,
+                 occupancy_resource=None, prediction_threshold=0.70):
+
+        if occupancy_resource is None:
+            occupancy_resource = "GlobalOccupancy"
+
+        if name is None:
+            self.name = "{}_OccuppancyPredictorResource".format(
+                occupancy_resource)
+
+        super().__init__(self.name,
                          power_usage=100,
                          variables=["occupancy_prediction",
                                     "occupancy_prediction_raw"])
-        # runtime_modes = [Modes.off_peak],
 
         self.did_train = False
 
@@ -28,12 +35,6 @@ class OccupancyPredictorResource(DeviceResource):
             conditions=[lambda: not self.did_train])
 
         self.prediction_threshold = prediction_threshold
-
-        if occupancy_resource == "":
-            occupancy_resource = "EcobeeResource"
-        else:
-            self.name = "{}_OccuppancyPredictorResource".format(
-                occupancy_resource)
 
         self.occupancy_resource = occupancy_resource
 
@@ -153,121 +154,9 @@ class OccupancyPredictorResource(DeviceResource):
         DeviceResource.stop(self)
 
 
-def test_occupancy_predictor():
-
-    from remoteresource import RemoteRestResource
-    from hammock import Hammock
-
-    class CR(Resource):
-        def __init__(self):
-            super().__init__("ConfigurationResource", [])
-            self.config = {"db_root": "/home/kev/nas2/.cache"}
-
-    config_resource = CR()
-
-    thermostat = RemoteRestResource("EcobeeResource", Hammock(
-        "https://192.168.1.40:8079/EcobeeResource/EcobeeResource"), poll_rate=3)
-    weather = RemoteRestResource("weather", Hammock(
-        "https://192.168.1.40:8079/weather/weather"), poll_rate=3)
-
-    op = OccupancyPredictorResource()
-
-    asyncio.get_event_loop().run_until_complete(asyncio.sleep(4))
-
-    with open("24_occupancy_prediction.csv", "w") as f:
-
-        d = datetime.now()
-        for n in range(7):
-            for i in range(240):
-                d += timedelta(minutes=10)
-                prediction = op.predict_occupancy(d)
-                print("{} - {}".format(d, prediction))
-
-                f.write('{}, {}, {}\n'.format(d.date().weekday(),
-                                              HourOfDayResource.hour(d), prediction))
-
-
-def test_occupancy_accuracy():
-
-    from remoteresource import RemoteRestResource
-    from hammock import Hammock
-    import math
-    import numpy as np
-
-    class CR(Resource):
-        def __init__(self):
-            super().__init__("ConfigurationResource", [])
-            db_root = "{}/.cache".format(os.environ["HOME"])
-            self.config = {"db_root": db_root}
-
-    config_resource = CR()
-
-    thermostat = RemoteRestResource("EcobeeResource", Hammock(
-        "https://192.168.1.40:8079/EcobeeResource/EcobeeResource"), poll_rate=3)
-    weather = RemoteRestResource("weather", Hammock(
-        "https://192.168.1.40:8079/weather/weather"), poll_rate=3)
-
-    op = OccupancyPredictorResource()
-
-    asyncio.get_event_loop().run_until_complete(asyncio.sleep(4))
-    op.init_predictor()
-
-    op.train()
-
-    asyncio.get_event_loop().run_until_complete(asyncio.sleep(4))
-
-    layers = op.predictors.all_layers
-
-    num_values = len(layers[0].values)
-
-    print("number of total values: {}".format(num_values))
-
-    values_occupancy = layers[0].values
-    values_day_of_week = layers[1].values
-    values_hour_of_day = layers[2].values
-
-    error_rate = []
-
-    hour = 7.0
-
-    with open("occupancy_prediction_accuracy.csv", "w") as f:
-        for i in range(num_values):
-            try:
-                if (values_hour_of_day[i] < hour or
-                        values_hour_of_day[i] > hour + 1):
-                    continue
-
-                d = datetime(
-                    year=2019, month=12, day=values_day_of_week[i] + 1,
-                    hour=math.floor(values_hour_of_day[i]))
-
-                prediction = op.predict_occupancy(d)
-                occupancy = 0.0
-                if values_occupancy[i]:
-                    occupancy = 1.0
-
-                output_str = "{}, {}, {}, {}, {}\n".format(
-                    values_day_of_week[i],
-                    values_hour_of_day[i],
-                    occupancy,
-                    round(prediction, 2), abs(occupancy - prediction))
-
-                f.write(output_str)
-                print(output_str)
-                error_rate.append(abs(occupancy - prediction))
-
-            except Exception:
-                exc_type, exc_value, exc_traceback = sys.exc_info()
-                traceback.print_tb(exc_traceback, limit=6, file=sys.stdout)
-                traceback.print_exception(exc_type, exc_value, exc_traceback,
-                                          limit=6, file=sys.stdout)
-
-    print("average error rate: {}".format(np.mean(error_rate)))
-
-
 def main():
-    # test_occupancy_predictor()
-    test_occupancy_accuracy()
+    # TODO: do some basic testing
+    pass
 
 
 if __name__ == "__main__":
