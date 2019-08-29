@@ -43,6 +43,7 @@ class OccupancyPredictorResource(DeviceResource):
                          variables=["occupancy_prediction",
                                     "occupancy_prediction_raw"])
 
+        self.predictors = None
         self.did_train = False
 
         self.runtime_policy = RunIfCanPolicy(
@@ -101,6 +102,9 @@ class OccupancyPredictorResource(DeviceResource):
         self.poller = resource_poll(self.wait_can_run, HOURS(1))
 
     def train(self, and_test=True):
+        if self.predictors is None:
+            return
+
         self.predictors.train(and_test=and_test,
                               convert_func=lstm_convert_dataset)
 
