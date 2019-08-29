@@ -1,7 +1,9 @@
 import asyncio
 from aiohttp import ClientSession
 import pymyq
-from pymyq.device import STATE_OPEN
+from pymyq.device import STATE_OPEN, STATE_CLOSED, STATE_STOPPED
+from pymyq.device import STATE_TRANSITION, STATE_UNKNOWN, STATE_CLOSING
+from pymyq.device import STATE_OPENING
 # from pymyq.errors import MyQError
 
 from aizero.resource import MINS
@@ -9,6 +11,14 @@ from aizero.device_resource import DeviceResource
 
 
 class MyQResource(DeviceResource):
+
+    state_open = STATE_OPEN
+    state_closed = STATE_CLOSED
+    state_stopped = STATE_STOPPED
+    state_opening = STATE_OPENING
+    state_closing = STATE_CLOSING
+    state_transition = STATE_TRANSITION
+    state_unknown = STATE_UNKNOWN
 
     def __init__(self, device_name, username, passwd, brand="liftmaster"):
 

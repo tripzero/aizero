@@ -2,6 +2,7 @@ aiohttp
 astral
 pandas
 pyecobee
+pyHS100
 pymyq
 pysolar
 python_openzwave
