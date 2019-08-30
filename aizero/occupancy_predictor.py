@@ -38,6 +38,9 @@ class OccupancyPredictorResource(DeviceResource):
             self.name = "{}_OccuppancyPredictorResource".format(
                 occupancy_resource)
 
+        else:
+            self.name = name
+
         super().__init__(self.name,
                          power_usage=100,
                          variables=["occupancy_prediction",
