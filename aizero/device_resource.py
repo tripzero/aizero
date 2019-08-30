@@ -579,6 +579,9 @@ class DeviceManager(Resource):
         self.setValue("running_devices", self.running_devices_pretty)
         self.setValue("total_power", self.running_power)
 
+        # process devicess because total power changed
+        self.process_managed_devices()
+
     @property
     def running_devices_pretty(self):
         rdp = []
@@ -854,6 +857,7 @@ class RemoteRestDeviceResource(RemoteRestResource, DeviceResource):
 
 
 def test_main():
+    Resource.clearResources()
     # test priority system
     device_manager = DeviceManager(max_power_budget=800)
 
@@ -915,7 +919,8 @@ def test_main():
     assert device_high_too_much_power.running()
 
 
-def test_remote():
+"""def test_remote():
+    Resource.clearResources()
     device_manager = DeviceManager(max_power_budget=800)
 
     from hammock import Hammock
@@ -934,9 +939,11 @@ def test_remote():
 
     assert remote_resource.getValue(
         "total_power") == remote_resource.getValue("power_usage")
+"""
 
 
 def test_occupancy_policy():
+    Resource.clearResources()
     device_manager = DeviceManager(max_power_budget=800)
 
     occupancy_resource = Resource(
@@ -969,6 +976,30 @@ def test_occupancy_policy():
     device_manager.process_managed_devices()
 
     assert not dev1.running(), "Device should not be running"
+
+
+def test_runifcan():
+    Resource.clearResources()
+    device_manager = DeviceManager(max_power_budget=1000)
+
+    device1 = DeviceResource("my special device", power_usage=500)
+    device2 = DeviceResource("my other device", power_usage=500)
+
+    device1.run()
+    device2.run()
+
+    assert device1.running()
+    assert device2.running()
+
+    device4 = DeviceResource("automated device",
+                             power_usage=100,
+                             runtime_policy=RunIfCanPolicy())
+
+    assert not device4.running()
+
+    device1.stop()
+
+    assert device4.running()
 
 
 if __name__ == "__main__":

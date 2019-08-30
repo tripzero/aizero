@@ -11,7 +11,7 @@ import tensorflow as tf
 from tensorflow import keras
 
 from aizero.learningresource_keras import Learning, FeatureColumn
-from aizero.learningresource_keras import features_shape
+from aizero.learningresource_keras import FakeFeatureColumn, features_shape
 from aizero.time_of_day_resource import HourOfDayResource
 from aizero.resource_py3 import Py3Resource as resource_poll
 from aizero.sys_time import get_current_datetime
@@ -61,8 +61,9 @@ class DevicePredictor(Resource):
                                      kernel_initializer='random_normal')]
 
         self.predictor = Learning(self.subdir, features=features,
-                                  "device_running",
+                                  prediction_feature="device_running",
                                   persist=True,
+                                  loss="binary_crossentropy",
                                   layers=layers)
 
         self.poller = resource_poll(self.poll_func, MINS(10))
