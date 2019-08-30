@@ -14,6 +14,8 @@ Other supported features include
 - device policies (for more complex automation)
 - combine data from resources to create a machine learning model 
   (see aizero/occupancy_predictor.py)
+- mqtt integration
+- zwave support
 
 ## Get started
 
