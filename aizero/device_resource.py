@@ -99,6 +99,9 @@ class RuntimePolicy:
         for condition in self.conditions:
             cond_ret_val = condition()
 
+            # print("running condition from {}: {}: {}".format(
+            #    self.policy, condition.__name__, cond_ret_val))
+
             do_something |= cond_ret_val is not None
 
             if cond_ret_val is not None:
@@ -271,6 +274,7 @@ class RunIfTemperaturePolicy(RuntimePolicy):
 
         self.set_point = set_point
         self.temperature = None
+        self.sensor_name = sensor_name
 
         def wait_resource():
             self.temperature = gr(sensor_name).subscribe2("temperature")
@@ -286,7 +290,11 @@ class RunIfTemperaturePolicy(RuntimePolicy):
     def can_run(self):
 
         if self.temperature is not None:
+            # print("sensor_name={}".format(self.sensor_name))
+            # print("temperature={}".format(self.temperature.value))
             return self.temperature.value > self.set_point
+        else:
+            print("temperature is None. This is probably a bug")
 
 
 class DeviceManager(Resource):
@@ -444,6 +452,7 @@ class DeviceManager(Resource):
                         device.name, device.max_power_usage))
                     print("estimated power usage will be: {}W".format(
                         self.running_power + device.max_power_usage))
+                    print("policies that say this device can run:")
                     print("\n".join(can_run_policies))
                     device.run()
 
@@ -452,6 +461,7 @@ class DeviceManager(Resource):
                     print("device {} can NOT run. {} W. calling stop()".format(
                         device.name, device.power_usage))
                     self.debug_print_capacity()
+                    print("policies stopping this device:")
                     print("\n".join(can_not_run_policies))
                     device.stop()
                     # self.debug_print_capacity()
@@ -527,13 +537,14 @@ class DeviceManager(Resource):
         return max(0, power_delta)
 
     def can_run(self, device):
-        # print("can_run: device: {}".format(device.name))
+        print("can_run: device: {}".format(device.name))
 
         over_budget_amount = self.overrun_amount(device)
-        cr = over_budget_amount == 0
+        cr = over_budget_amount == 0 and self.capcity_percentage < 100
 
-        # print("can_run: device under budget: {}".format(cr))
-        # print("can_run: over budget amount: {}".format(over_budget_amount))
+        print("can_run: device under budget: {}".format(cr))
+        print("can_run: over budget amount: {}".format(over_budget_amount))
+        print("can_run: capacity: {}".format(self.capcity_percentage))
 
         is_time_of_use_mode = False
         if self.time_of_use_mode is not None:
@@ -542,12 +553,14 @@ class DeviceManager(Resource):
 
         cr |= is_time_of_use_mode
 
-        # print("can_run: is time of use mode: {}".format(is_time_of_use_mode))
+        print("can_run: is time of use mode: {}".format(is_time_of_use_mode))
 
         has_kickable = self.kickable_devices(device, over_budget_amount, True)
 
         # finally, check if there are lower priority devices we can bump:
         cr |= has_kickable is not None
+
+        print("can_run: has kickable? {}".format(has_kickable))
 
         return cr
 
@@ -813,6 +826,9 @@ class DeviceResource(Resource):
             return False
 
         return True
+
+    def to_json(self):
+        pass
 
 
 class RemoteRestDeviceResource(RemoteRestResource, DeviceResource):
