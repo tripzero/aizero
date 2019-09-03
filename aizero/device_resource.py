@@ -542,9 +542,9 @@ class DeviceManager(Resource):
         over_budget_amount = self.overrun_amount(device)
         cr = over_budget_amount == 0 and self.capcity_percentage < 100
 
-        print("can_run: device under budget: {}".format(cr))
-        print("can_run: over budget amount: {}".format(over_budget_amount))
-        print("can_run: capacity: {}".format(self.capcity_percentage))
+        # print("can_run: device under budget: {}".format(cr))
+        # print("can_run: over budget amount: {}".format(over_budget_amount))
+        # print("can_run: capacity: {}".format(self.capcity_percentage))
 
         is_time_of_use_mode = False
         if self.time_of_use_mode is not None:
@@ -553,14 +553,14 @@ class DeviceManager(Resource):
 
         cr |= is_time_of_use_mode
 
-        print("can_run: is time of use mode: {}".format(is_time_of_use_mode))
+        # print("can_run: is time of use mode: {}".format(is_time_of_use_mode))
 
         has_kickable = self.kickable_devices(device, over_budget_amount, True)
 
         # finally, check if there are lower priority devices we can bump:
         cr |= has_kickable is not None
 
-        print("can_run: has kickable? {}".format(has_kickable))
+        # print("can_run: has kickable? {}".format(has_kickable))
 
         return cr
 
@@ -1016,6 +1016,20 @@ def test_runifcan():
     device1.stop()
 
     assert device4.running()
+
+
+def test_zero_power_usage_can_run():
+
+    Resource.clearResources()
+
+    device_manager = DeviceManager(max_power_budget=800)
+    device_1 = DeviceResource("Power Hog 3000", 800)
+
+    device_1.run()
+
+    device_2 = DeviceResource("Power Hog 3001", 0)
+
+    assert not device_2.can_run()
 
 
 if __name__ == "__main__":
