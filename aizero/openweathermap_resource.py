@@ -88,9 +88,22 @@ class WeatherResource(Resource):
 
     def get_forecast(self, forecast_date=None):
         if forecast_date is None:
-            forecast_date = datetime.now()
+            forecast_date = get_current_datetime()
 
         return hourly(self.key, forecast_date, self.lat, self.lon)
+
+    def get_standard_forecast(self, forecast_date=None):
+        if forecast_date is None:
+            forecast_date = get_current_datetime()
+
+        fc = hourly(self.key, forecast_date, self.lat, self.lon)
+
+        fc_standard = {}
+
+        fc_standard["forecast_high"] = fc["main"]["temp_max"]
+        fc_standard["forecast_low"] = fc["main"]["temp_min"]
+        fc_standard["forecast_cloud_cover"] = fc['clouds']['all']
+        fc_standard['forecast_conditions'] = fc["weather"][0]["main"]
 
     def poll_func(self):
 

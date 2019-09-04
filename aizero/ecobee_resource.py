@@ -524,7 +524,7 @@ class EcobeeResource(DeviceResource):
         config = Resource.resource("ConfigurationResource").config
 
         api_key = config["ecobee_apikey"]
-        thermostat_name = config["ecobee_thermostate_name"]
+        thermostat_name = config["ecobee_thermostat_name"]
 
         self.ecobee_user_preferences = None
         self.present_users = []

@@ -4,7 +4,7 @@
 #
 import asyncio
 from functools import partial
-from aizero.resource import Resource, ResourceNotFoundException
+from aizero.resource import Resource, ResourceNotFoundException, MINS
 
 from gmqtt.client import Client
 from gmqtt.mqtt.constants import MQTTv311
@@ -61,6 +61,7 @@ class MqttCommon:
         self.connected = False
 
         asyncio.get_event_loop().create_task(self.do_connect(broker))
+        asyncio.get_event_loop().create_task(self._ping_loop())
 
     @asyncio.coroutine
     def do_connect(self, broker):
@@ -82,6 +83,13 @@ class MqttCommon:
     def wait_until_connected(self):
         while not self.connected:
             yield from asyncio.sleep(0.1)
+
+    @asyncio.coroutine
+    def _ping_loop(self):
+        while True:
+            yield from asyncio.sleep(MINS(3))
+            var = "{}/keep_alive".format(self.name)
+            self.client.publish(var, "1")
 
     def on_message(self, client, topic, payload, qos, properties):
         print("on_message({}: {}) please override me in subclass.".format(
