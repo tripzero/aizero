@@ -129,8 +129,13 @@ class KasaPlug(DeviceResource):
         elif not is_on and super().running():
             super().stop()
 
+        self._update_power_usage()
+
+    def _update_power_usage(self):
+
         if self.has_emeter:
-            self.update_power_usage(self.power_usage)
+            consumption = self.device.current_consumption()
+            self.update_power_usage(consumption)
 
     def run(self):
         self.set(True)
@@ -139,14 +144,6 @@ class KasaPlug(DeviceResource):
     def stop(self):
         if super().stop():
             self.set(False)
-
-    @property
-    def power_usage(self):
-        if self.device is not None and self.has_emeter:
-            consumption = self.device.current_consumption()
-            return consumption
-
-        return super().power_usage
 
     @property
     def dimmer_level(self):
@@ -209,12 +206,9 @@ class KasaStripPort(KasaPlug):
         else:
             self.device.turn_off(index=self.plug_index)
 
-    @property
-    def power_usage(self):
-        if self.device is not None and self.has_emeter:
-            return self.device.current_consumption(index=self.plug_index)
-
-        return super().power_usage
+    def _update_power_usage(self):
+        consumption = self.device.current_consumption(index=self.plug_index)
+        self.update_power_usage(consumption)
 
 
 def test_power_usage_setter():

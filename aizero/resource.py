@@ -30,8 +30,14 @@ def DAYS(days):
     return days * HOURS(24)
 
 
-def get_resource(resource_name):
-    return Resource.resource(resource_name)
+def get_resource(resource_name, class_=None, **kwargs):
+    try:
+        return Resource.resource(resource_name)
+    except ResourceNotFoundException:
+        if class_ is not None:
+            return class_(**kwargs)
+
+    raise ResourceNotFoundException()
 
 
 def has_resource(rsrc_name):

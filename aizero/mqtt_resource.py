@@ -59,13 +59,17 @@ class MqttCommon:
         self.mqtt_protocol_version = mqtt_protocol_version
 
         self.connected = False
+        self.broker = broker
 
         asyncio.get_event_loop().create_task(self.do_connect(broker))
         asyncio.get_event_loop().create_task(self._ping_loop())
 
     @asyncio.coroutine
-    def do_connect(self, broker):
+    def do_connect(self, broker, reconnect=False):
         try:
+            if reconnect:
+                yield from asyncio.sleep(30)
+
             yield from self.client.connect(broker, keepalive=60,
                                            version=self.mqtt_protocol_version)
         except MQTTConnectError as ex:
@@ -73,11 +77,13 @@ class MqttCommon:
             print(ex.message)
 
     def on_connect(self, client, flags, rc, properties):
+        print("MqttCommon({}) connected".format(self.name))
         self.connected = True
 
     def on_disconnect(self, packet, exc=None):
-        print("MqttCommon({}) disconnected".format(self.name))
         self.connected = False
+        asyncio.get_event_loop().create_task(self.do_connect(self.broker, reconnect=True))
+        print("MqttCommon({}) disconnected".format(self.name))
 
     @asyncio.coroutine
     def wait_until_connected(self):

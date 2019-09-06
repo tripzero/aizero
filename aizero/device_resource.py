@@ -344,11 +344,11 @@ class DeviceManager(Resource):
     def solar_power_changed(self, value):
         self.solar_power = value
         self.debug_print_capacity()
-        self.process_managed_devices()
+        # self.process_managed_devices()
 
     def time_of_use_changed(self, value):
         self.time_of_use_mode = value
-        self.process_managed_devices()
+        # self.process_managed_devices()
 
     def register_managed_device(self, device):
         self.debug_print("registering managed device: {}".format(device.name))
@@ -467,8 +467,8 @@ class DeviceManager(Resource):
                     # self.debug_print_capacity()
 
     def device_power_usage_changed(self, value):
-        self.process_managed_devices()
-        # pass
+        pass
+        # self.process_managed_devices()
 
     @property
     def running_power(self):
@@ -537,14 +537,18 @@ class DeviceManager(Resource):
         return max(0, power_delta)
 
     def can_run(self, device):
-        print("can_run: device: {}".format(device.name))
+        self.debug_print("can_run: device: {}".format(device.name))
 
         over_budget_amount = self.overrun_amount(device)
         cr = over_budget_amount == 0 and self.capcity_percentage < 100
 
-        # print("can_run: device under budget: {}".format(cr))
-        # print("can_run: over budget amount: {}".format(over_budget_amount))
-        # print("can_run: capacity: {}".format(self.capcity_percentage))
+        self.debug_print("can_run: device under budget: {}".format(cr))
+
+        self.debug_print(
+            "can_run: over budget amount: {}".format(over_budget_amount))
+
+        self.debug_print("can_run: capacity: {}".format(
+            self.capcity_percentage))
 
         is_time_of_use_mode = False
         if self.time_of_use_mode is not None:
@@ -553,14 +557,15 @@ class DeviceManager(Resource):
 
         cr |= is_time_of_use_mode
 
-        # print("can_run: is time of use mode: {}".format(is_time_of_use_mode))
+        self.debug_print(
+            "can_run: is time of use mode: {}".format(is_time_of_use_mode))
 
         has_kickable = self.kickable_devices(device, over_budget_amount, True)
 
         # finally, check if there are lower priority devices we can bump:
         cr |= has_kickable is not None
 
-        # print("can_run: has kickable? {}".format(has_kickable))
+        self.debug_print("can_run: has kickable? {}".format(has_kickable))
 
         return cr
 
