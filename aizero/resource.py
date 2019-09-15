@@ -149,6 +149,7 @@ class Resource(object):
 
             if export_opts is None:
                 export_opts = Resource._mqtt_wrapper_args
+
             self.export_mqtt(broker=Resource._mqtt_broker,
                              mqtt_export_options=export_opts)
 
@@ -168,9 +169,8 @@ class Resource(object):
 
         if "broker" not in mqtt_export_options:
             mqtt_export_options["broker"] = broker
-            self.mqtt_wrapper = MqttWrapper(self, **mqtt_export_options)
-        else:
-            self.mqtt_wrapper = None
+
+        self.mqtt_wrapper = MqttWrapper(self, **mqtt_export_options)
 
     @property
     def unique_name(self):
