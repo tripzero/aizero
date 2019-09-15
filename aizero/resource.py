@@ -120,13 +120,17 @@ class Resource(object):
     _mqtt_wrapper_args = None
 
     def __init__(self, name, variables, loop=None, ignore_same_value=True,
-                 mqtt_export_options=None):
+                 mqtt_export_options=None, no_snapshot=False):
         self.name = name
         self.deviceName = name
         self.ignore_same_value = ignore_same_value
         self.data_frame = None
+        self.no_snapshot = no_snapshot
 
         Resource.register(self)
+
+        if not isinstance(variables, list):
+            assert ValueError("variables must be a list")
 
         self.variables = {}
         self.virtualDevice = True
@@ -358,6 +362,9 @@ class Resource(object):
         """
         create/update dataframe from current values
         """
+
+        if self.no_snapshot:
+            return
 
         if self.data_frame is None:
             self.restore(None)
