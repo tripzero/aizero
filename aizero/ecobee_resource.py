@@ -425,10 +425,13 @@ class Ecobee:
         self.persist_to_shelf()
 
     def refresh_tokens(self):
-        print("ecobee: refreshing tokens")
-        response = self.service.refresh_tokens()
+        try:
+            print("ecobee: refreshing tokens")
+            response = self.service.refresh_tokens()
 
-        self.persist_to_shelf()
+            self.persist_to_shelf()
+        except:
+            print("Ecobee: refresh token exception")
 
     def persist_to_shelf(self):
         pyecobee_db = shelve.open(self.db_file, protocol=2)

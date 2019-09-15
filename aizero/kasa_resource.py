@@ -100,9 +100,6 @@ class KasaPlug(DeviceResource):
         self.has_emeter = self.device.has_emeter
         self.is_dimmable = self.device.is_dimmable
 
-    def running(self):
-        return super().running() and self.device and self.device.is_on
-
     def set(self, val):
         """
         Turn on or off the device
@@ -139,7 +136,7 @@ class KasaPlug(DeviceResource):
 
     def run(self):
         self.set(True)
-        self.update()
+        return super().run()
 
     def stop(self):
         if super().stop():
@@ -165,8 +162,10 @@ class KasaPlug(DeviceResource):
         while True:
             try:
                 self.update()
-            except SmartDeviceException:
-                print("KasaPlug error. trying to reconnect")
+            except SmartDeviceException as ex:
+                print("KasaPlug error ({}). trying to reconnect".format(
+                    self.name))
+                print(ex)
                 yield from self.do_get_kasa_plug()
             except Exception:
                 print("error in kasa_resource process()")
@@ -206,7 +205,19 @@ class KasaStripPort(KasaPlug):
         else:
             self.device.turn_off(index=self.plug_index)
 
-    def _update_power_usage(self):
+    def update(self):
+
+        if not self.device:
+            return
+
+        is_on = self.device.is_on()[self.plug_index]
+
+        if is_on and not super().running():
+            super().run()
+
+        elif not is_on and super().running():
+            super().stop()
+
         consumption = self.device.current_consumption(index=self.plug_index)
         self.update_power_usage(consumption)
 
@@ -220,7 +231,6 @@ def test_power_usage_setter():
 
 
 def main():
-    from pyHS100 import Discover
     from device_resource import DeviceManager
     DeviceManager()
 

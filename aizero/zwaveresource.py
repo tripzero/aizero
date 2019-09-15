@@ -4,7 +4,7 @@ from openzwave.network import ZWaveNetwork
 from openzwave.option import ZWaveOption
 from pydispatch import dispatcher
 
-from aizero.resource import Resource
+from aizero.resource import Resource, MINS
 from aizero.device_resource import DeviceResource
 
 """
@@ -195,7 +195,7 @@ class ZWaveDoorLock(Node):
     def _do_lock_unlock(self, val):
         self.set_lock(val)
         while self.locked is None or self.locked != val:
-            yield from asyncio.sleep(15)
+            yield from asyncio.sleep(MINS(1))
             print("trying to set lock ({}) to {}".format(self.name, val))
             self.set_lock(val)
 

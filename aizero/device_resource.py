@@ -214,7 +214,8 @@ class OffIfUnoccupied(RuntimePolicy):
             return
 
         is_occupied = self.occupancy.value
-        # print("occupied: {}".format(is_occupied))
+        # print("{} is occupied: {}".format(self.occupancy_resource.name,
+        #                                 is_occupied))
 
         if not is_occupied:
             asyncio.get_event_loop().create_task(self.can_run_check_timeout())

@@ -90,7 +90,7 @@ class OccupancyPredictorResource(DeviceResource):
         layers = [
             keras.layers.LSTM(64, activation="relu",
                               input_shape=(shape - 1, 1)),
-            keras.layers.Dense(64, activation="relu"),
+            keras.layers.Dense(128, activation="relu"),
             keras.layers.Dense(1, activation="sigmoid")
         ]
 
