@@ -105,7 +105,8 @@ class MqttCommon:
 class MqttResource(Resource, MqttCommon):
 
     def __init__(self, name, broker, variables=None,
-                 variable_mqtt_map=None, quiet=True, **kwargs):
+                 variable_mqtt_map=None, quiet=True,
+                 encoding='utf-8', **kwargs):
         """
             :param variable_mqtt_map - map mqtt messages to local variables.
                    eg. remote_resource =
@@ -117,6 +118,8 @@ class MqttResource(Resource, MqttCommon):
             :param topic_conversion_map - map of mqtt topics and
                    conversion functions
         """
+
+        self.encoding = encoding
 
         if variables is None:
             variables = []
@@ -142,7 +145,8 @@ class MqttResource(Resource, MqttCommon):
 
     def on_message(self, client, topic, payload, qos, properties):
 
-        payload = payload.decode('utf-8')
+        if self.encoding is not None:
+            payload = payload.decode(self.encoding)
 
         if not self.quiet:
             print("MqttResource message: {} : {}".format(topic, payload))

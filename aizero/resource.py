@@ -422,7 +422,7 @@ class Resource(object):
     @property
     def dataframe(self):
         if self.data_frame is None:
-            raise ValueError("no data in resource")
+            raise ValueError("no data in resource or no_snapshot is True")
 
         return self.data_frame
 
