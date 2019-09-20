@@ -1,9 +1,11 @@
 import inspect
-import sys
-import os
-import traceback
-import pandas as pd
+import json
 import numpy as np
+import os
+import pandas as pd
+import sys
+import traceback
+
 from datetime import datetime, timezone
 
 if sys.version_info >= (3, 0):
@@ -200,6 +202,13 @@ class Resource(object):
                     Resource.callables[self.unique_name] = {}
                 Resource.callables[self.unique_name][name] = method
 
+    def callables(self):
+        try:
+            return list(Resource.callables[self.unique_name].values())
+        except AttributeError as at:
+            print(at)
+            print("did you forget to call register_callable_class()?")
+
     @staticmethod
     def resource(name, device=None):
         for r in Resource.resources:
@@ -254,9 +263,13 @@ class Resource(object):
         return True
 
     @classmethod
-    def makeCallable(sey_whut, func):
+    def make_callable(sey_whut, func):
         func.is_callable = True
         return func
+
+    @classmethod
+    def makeCallable(sey_whut, func):
+        return Resource.make_callable(sey_whut, func)
 
     def subscribe(self, variable, callback):
         if variable not in self.variables:
@@ -429,6 +442,9 @@ class Resource(object):
     @asyncio.coroutine
     def poll(self):
         return True
+
+    def to_json(self):
+        return json.dumps(self.variables)
 
 
 def test_subscribe2():

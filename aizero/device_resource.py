@@ -1,11 +1,11 @@
+import asyncio
+import json
 import numpy as np
-
 
 from aizero.resource import Resource, ResourceNotFoundException, MINS
 from aizero.resource import get_resource as gr
+from aizero.resource import ResourceRequires
 from aizero.remoteresource import RemoteRestResource
-
-import asyncio
 from aizero.resource_py3 import Py3PollWhileTrue as poll_while_true
 from aizero.resource_py3 import Py3Resource as resource_poll
 
@@ -110,6 +110,18 @@ class RuntimePolicy:
         if do_something:
             return ret_val
 
+    def to_json(self):
+        serialized = {}
+        serialized["name"] = self.policy
+        conditions = []
+
+        for cond in self.conditions:
+            conditions.append(cond.__name__)
+
+        serialized["conditions"] = conditions
+
+        return json.dumps(serialized)
+
 
 class RunIfCanPolicy(RuntimePolicy):
 
@@ -172,21 +184,23 @@ class OffIfUnoccupied(RuntimePolicy):
         self.checked = False
         self.occupancy = None
 
-        def wait_occupancy():
+        def wait_occupancy(gr):
             self.occupancy_resource = gr(occupancy_resource_name)
 
             if self.occupancy_resource.hasProperty("predicted_occupancy"):
                 self.occupancy = self.occupancy_resource.subscribe2(
                     "predicted_occupancy")
-            else:
+            elif self.occupancy_resource.hasProperty("occupancy"):
                 self.occupancy = self.occupancy_resource.subscribe2(
                     "occupancy")
+            else:
+                raise ValueError(
+                    """resource {} does not have occupancy or \
+                    predicted_occupancy resources""".format(
+                        occupancy_resource_name))
 
-        try:
-            gr(occupancy_resource_name)
-            wait_occupancy()
-        except ResourceNotFoundException:
-            Resource.waitResource(occupancy_resource_name, wait_occupancy)
+        self.rsrcs = ResourceRequires([occupancy_resource_name],
+                                      wait_occupancy)
 
     def _pass_process(self, device):
         pass
@@ -220,6 +234,18 @@ class OffIfUnoccupied(RuntimePolicy):
         if not is_occupied:
             asyncio.get_event_loop().create_task(self.can_run_check_timeout())
             return False
+
+    def to_json(self):
+        """
+        overrides RuntimePolicy.to_json and adds name of occupancy resource
+        associated with this policy
+        """
+
+        serialized = json.loads(super().to_json())
+
+        serialized["associated_sensor"] = self.occupancy_resource.name
+
+        return json.dumps(serialized)
 
 
 class LinkDevicePolicy(RuntimePolicy):
@@ -263,6 +289,19 @@ class LinkDevicePolicy(RuntimePolicy):
     def can_run(self):
         return self.linked_device_running.value
 
+    def to_json(self):
+        """
+        overrides RuntimePolicy.to_json and adds name of resource
+        associated with this policy
+        """
+
+        linked_name = self.linked_device_running.resource.name
+
+        serialized = json.loads(super().to_json())
+        serialized["linked_resource"] = linked_name
+
+        return json.dumps(serialized)
+
 
 class RunIfTemperaturePolicy(RuntimePolicy):
 
@@ -277,16 +316,12 @@ class RunIfTemperaturePolicy(RuntimePolicy):
         self.temperature = None
         self.sensor_name = sensor_name
 
-        def wait_resource():
+        def wait_resource(gr):
             self.temperature = gr(sensor_name).subscribe2("temperature")
             self.conditions.append(self.can_run)
 
-        try:
-            gr(sensor_name)
-            wait_resource()
-
-        except ResourceNotFoundException:
-            Resource.waitResource(sensor_name, wait_resource)
+        self.rsrcs = ResourceRequires([sensor_name],
+                                      wait_resource)
 
     def can_run(self):
 
@@ -296,6 +331,18 @@ class RunIfTemperaturePolicy(RuntimePolicy):
             return self.temperature.value > self.set_point
         else:
             print("temperature is None. This is probably a bug")
+
+    def to_json(self):
+        """
+        overrides RuntimePolicy.to_json and adds name of resource
+        associated with this policy
+        """
+
+        serialized = json.loads(super().to_json())
+        serialized["associated_sensor"] = self.sensor_name
+        serialized["setpoint"] = self.set_point
+
+        return json.dumps(serialized)
 
 
 class DeviceManager(Resource):
@@ -653,6 +700,8 @@ class DeviceResource(Resource):
 
         super().__init__(name, vars, **resource_args)
 
+        self.device_manager = None
+
         self.update_power_usage(power_usage)
         self._max_power_usage = power_usage
 
@@ -674,26 +723,12 @@ class DeviceResource(Resource):
         else:
             self._runtime_policy = runtime_policy
 
-        def register_with_manager():
+        def register_with_manager(rsrcs):
+            self.device_manager = rsrcs(device_manager)
             if self.runtime_policy:
                 self.device_manager.register_managed_device(self)
 
-        try:
-            if isinstance(device_manager, DeviceManager):
-                self.device_manager = device_manager
-            else:
-                self.device_manager = Resource.resource(device_manager)
-
-            register_with_manager()
-
-        except ResourceNotFoundException:
-            self.device_manager = None
-
-            def wait_device_manager():
-                self.device_manager = Resource.resource(device_manager)
-                register_with_manager()
-
-            Resource.waitResource(device_manager, wait_device_manager)
+        self.rsrcs = ResourceRequires([device_manager], register_with_manager)
 
     @property
     def runtime_policy(self):
@@ -790,7 +825,7 @@ class DeviceResource(Resource):
         """
         Register with the device manager as running
         """
-        if not self.device_manager:
+        if self.device_manager is None:
             return False
 
         self.device_manager.started_running(self)
@@ -834,7 +869,18 @@ class DeviceResource(Resource):
         return True
 
     def to_json(self):
-        pass
+        """
+        overrides Resource.to_json and adds policy data
+        """
+
+        serialized = json.loads(super().to_json())
+
+        policies_serialized = []
+
+        for policy in self._runtime_policy:
+            policies_serialized.append(policy.to_json())
+
+        serialized["policies"] = policies_serialized
 
 
 class RemoteRestDeviceResource(RemoteRestResource, DeviceResource):
@@ -976,7 +1022,7 @@ def test_occupancy_policy():
     off_policy = OffIfUnoccupied(occupancy_resource.name)
 
     dev1 = DeviceResource("dev1", power_usage=100,
-                          device_manager=device_manager,
+                          device_manager=device_manager.name,
                           runtime_policy=[off_policy])
 
     dev1.run()

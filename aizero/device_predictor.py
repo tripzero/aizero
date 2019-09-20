@@ -36,9 +36,9 @@ class DevicePredictor(Resource):
             "DayOfWeekResource"
         ], self.init_predictor)
 
-    def init_predictor(self):
+    def init_predictor(self, rsrcs):
 
-        self.device = self.rsrcs(self.device_name)
+        self.device = rsrcs(self.device_name)
 
         features = [
             FeatureColumn("hour_of_day", self.rsrcs(
