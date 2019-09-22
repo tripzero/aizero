@@ -19,14 +19,11 @@ from six.moves import input
 
 from aizero.device_resource import DeviceResource, RuntimePriority
 from aizero.occupancy_predictor import OccupancyPredictorResource
-from aizero.resource import Resource, MINS, HOURS, ResourceNameAlreadyTaken
+from aizero.resource import Resource, MINS, ResourceNameAlreadyTaken
 from aizero.resource import ResourceNotFoundException
 from aizero.resource_py3 import Py3Resource as resource_poll
-from aizero.time_of_use_resource import Modes
-from aizero.time_of_day_resource import HourOfDayResource, DayOfWeekResource
 from aizero.sys_time import get_current_datetime
-
-import tensorflow as tf
+from aizero.utils import run_thread
 
 
 def f_to_c(f):
@@ -537,7 +534,7 @@ class EcobeeResource(DeviceResource):
 
         self.ecobee_service = Ecobee(thermostat_name, api_key)
 
-        self.poller = resource_poll(self.poll_func, MINS(3))
+        self.poller = resource_poll(self.poll_func, MINS(3), is_coroutine=True)
 
         def wait_resources():
             self.occupancy_predictor = Resource.resource(
@@ -576,8 +573,10 @@ class EcobeeResource(DeviceResource):
         self.solar_power = value
         self.process()
 
+    @asyncio.coroutine
     def create_occupancy_resources(self):
-        sensors = self.ecobee_service.get_sensors(capability="occupancy")
+        sensors = yield from run_thread(
+            self.ecobee_service.get_sensors, capability="occupancy")
 
         for sensor in sensors:
             try:
@@ -714,21 +713,27 @@ class EcobeeResource(DeviceResource):
                     self.ecobee_service.set_hold(self.setpoint_cool + cool_mod,
                                                  self.setpoint_heat + heat_mod)
 
+    @asyncio.coroutine
+    def update_properties(self):
+
+        self.setValue("occupancy", self.ecobee_service.global_occupancy)
+        self.setValue("humidity", self.ecobee_service.humidity)
+        self.setValue("temperature", self.ecobee_service.temperature)
+        self.setValue("running_program",
+                      self.ecobee_service.current_program)
+        self.setValue("setpoint_cool",
+                      self.ecobee_service.temperature_setpoint_cool)
+        self.setValue("setpoint_heat",
+                      self.ecobee_service.temperature_setpoint_heat)
+
+    @asyncio.coroutine
     def poll_func(self):
         try:
-            self.ecobee_service.update()
 
-            self.create_occupancy_resources()
+            yield from run_thread(self.ecobee_service.update)
+            yield from self.create_occupancy_resources()
 
-            self.setValue("occupancy", self.ecobee_service.global_occupancy)
-            self.setValue("humidity", self.ecobee_service.humidity)
-            self.setValue("temperature", self.ecobee_service.temperature)
-            self.setValue("running_program",
-                          self.ecobee_service.current_program)
-            self.setValue("setpoint_cool",
-                          self.ecobee_service.temperature_setpoint_cool)
-            self.setValue("setpoint_heat",
-                          self.ecobee_service.temperature_setpoint_heat)
+            self.update_properties()
 
             # this is managed by hvac_cooler
             # TODO: we can reenable if service.cooling becomes more reliable

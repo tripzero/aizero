@@ -269,7 +269,8 @@ class Resource(object):
 
     @classmethod
     def makeCallable(sey_whut, func):
-        return Resource.make_callable(sey_whut, func)
+        func.is_callable = True
+        return func
 
     def subscribe(self, variable, callback):
         if variable not in self.variables:
@@ -283,10 +284,12 @@ class Resource(object):
         self.subscriptions[variable].append(callback)
         return True
 
-    def subscribe2(self, variable):
-        assert self.hasProperty(variable)
+    def subscribe2(self, property):
+        if not self.hasProperty(property):
+            raise ValueError("property {} does not exist".format(
+                property))
 
-        subscription = ResourcePropertySubscription(self, variable)
+        subscription = ResourcePropertySubscription(self, property)
         return subscription
 
     def hasProperty(self, variable):

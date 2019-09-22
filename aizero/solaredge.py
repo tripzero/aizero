@@ -1,5 +1,5 @@
+import asyncio
 from hammock import Hammock as SolarEdge
-from datetime import datetime, timedelta
 import json
 
 import sys
@@ -7,6 +7,7 @@ import traceback
 
 from .resource import Resource, MINS, get_resource
 from .resource_py3 import Py3Resource as resource_poll
+from .utils import run_thread
 
 
 class SolarPower(Resource):
@@ -28,7 +29,7 @@ class SolarPower(Resource):
 
         self.id = self._get_id()
 
-        self.poller = resource_poll(self.poll_func, MINS(5))
+        self.poller = resource_poll(self.poll_func, MINS(5), is_coroutine=True)
 
     def _get_id(self):
         resp = self.solar_edge.sites.list.GET(
@@ -59,17 +60,23 @@ class SolarPower(Resource):
         energy_day = overview['overview']['lastDayData']['energy']
         current_power = overview['overview']['currentPower']['power']
 
-        return energy_lifetime, energy_year, energy_month, energy_day, current_power
+        return (energy_lifetime,
+                energy_year,
+                energy_month,
+                energy_day,
+                current_power)
 
+    @asyncio.coroutine
     def poll_func(self):
         try:
-            energy_lifetime, energy_year, energy_month, energy_day, current_power = self._get_overview()
+            energy_lifetime, energy_year, energy_month, energy_day, current_power = yield from run_thread(
+                self._get_overview)
             self.set_value("energy_lifetime", energy_lifetime)
             self.set_value("energy_year", energy_year)
             self.set_value("energy_month", energy_month)
             self.set_value("energy_day", energy_day)
             self.set_value("current_power", current_power)
-        except:
+        except Exception:
             print("solar: error getting overview")
             exc_type, exc_value, exc_traceback = sys.exc_info()
             traceback.print_tb(exc_traceback, limit=6, file=sys.stdout)

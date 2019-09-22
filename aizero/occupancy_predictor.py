@@ -10,6 +10,7 @@ from aizero.learningresource_keras import *
 from aizero.time_of_day_resource import HourOfDayResource, DayOfWeekResource
 from aizero.sys_time import get_current_datetime
 from aizero.resource_py3 import Py3Resource as resource_poll
+from aizero.utils import run_thread
 
 
 def lstm_convert_dataset(dataset):
@@ -104,12 +105,15 @@ class OccupancyPredictorResource(DeviceResource):
         self.poller = resource_poll(self.poll_func, MINS(10))
         self.poller = resource_poll(self.wait_can_run, HOURS(1))
 
+    @asyncio.coroutine
     def train(self, and_test=True):
         if self.predictors is None:
             return
 
-        self.predictors.train(and_test=and_test,
+        yield from run_thread(self.predictors.train, and_test=and_test,
                               convert_func=lstm_convert_dataset)
+
+        self.stop()
 
     def predict_occupancy(self, date_to_predict=None):
         """ Return likelyhood that home has at least one human in it
@@ -161,15 +165,13 @@ class OccupancyPredictorResource(DeviceResource):
 
         self.did_train = True
 
-        self.train()
+        asyncio.get_event_loop().create_task(self.train())
         """except Exception as ex:
             print("Failed to train occupancy_predictor {} - {}".format(
                 self.name, ex))
             raise(ex)
             self.did_train = False
             """
-
-        self.stop()
 
     def stop(self):
         DeviceResource.stop(self)

@@ -67,7 +67,7 @@ class MqttCommon:
     @asyncio.coroutine
     def do_connect(self, broker):
         try:
-            yield from self.client.connect(broker, keepalive=30,
+            yield from self.client.connect(broker, keepalive=5,
                                            version=self.mqtt_protocol_version)
         except MQTTConnectError as ex:
             print("MqttCommon({}) do_connect failed!".format(self.name))

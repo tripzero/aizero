@@ -6,11 +6,13 @@ from pyHS100.smartstrip import SmartStrip
 
 from aizero.device_resource import DeviceResource
 from aizero.resource import MINS, has_resource, ResourceNameAlreadyTaken
+from aizero.utils import run_thread
 
 
+@asyncio.coroutine
 def discover_devices():
 
-    devices = Discover.discover()
+    devices = yield from run_thread(Discover.discover)
 
     plugs = []
 
@@ -94,7 +96,8 @@ class KasaPlug(DeviceResource):
         self.device = None
 
         while not self.device:
-            self.device = get_kasa_plug(self.device_name)
+            self.device = yield from run_thread(get_kasa_plug,
+                                                self.device_name)
             yield from asyncio.sleep(MINS(1))
 
         self.has_emeter = self.device.has_emeter
@@ -114,11 +117,15 @@ class KasaPlug(DeviceResource):
         else:
             self.device.turn_off()
 
+    def get_is_on(self):
+        return self.device.is_on
+
+    @asyncio.coroutine
     def update(self):
         if not self.device:
             return
 
-        is_on = self.device.is_on
+        is_on = yield from run_thread(self.get_is_on)
 
         if is_on and not super().running():
             super().run()
@@ -161,7 +168,8 @@ class KasaPlug(DeviceResource):
     def process(self):
         while True:
             try:
-                self.update()
+                yield from self.update()
+
             except SmartDeviceException as ex:
                 print("KasaPlug error ({}). trying to reconnect".format(
                     self.name))
@@ -205,12 +213,14 @@ class KasaStripPort(KasaPlug):
         else:
             self.device.turn_off(index=self.plug_index)
 
+    @asyncio.coroutine
     def update(self):
 
         if not self.device:
             return
 
-        is_on = self.device.is_on()[self.plug_index]
+        is_on = yield from run_thread(self.device.is_on)
+        is_on = is_on[self.plug_index]
 
         if is_on and not super().running():
             super().run()
@@ -218,7 +228,8 @@ class KasaStripPort(KasaPlug):
         elif not is_on and super().running():
             super().stop()
 
-        consumption = self.device.current_consumption(index=self.plug_index)
+        consumption = yield from run_thread(self.device.current_consumption,
+                                            index=self.plug_index)
         self.update_power_usage(consumption)
 
 
@@ -234,7 +245,8 @@ def main():
     from device_resource import DeviceManager
     DeviceManager()
 
-    plugs = discover_devices()
+    loop = asyncio.get_event_loop()
+    plugs = loop.run_until_complete(discover_devices())
 
     for plug in plugs:
         print("found: {}".format(plug.name))
@@ -257,7 +269,7 @@ def main():
 
             yield from asyncio.sleep(MINS(1))
 
-    asyncio.get_event_loop().run_until_complete(do_stuff(plugs))
+    loop.run_until_complete(do_stuff(plugs))
 
 
 if __name__ == "__main__":

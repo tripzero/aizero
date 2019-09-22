@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import asyncio
 
 import pandas as pd
 import tensorflow as tf
@@ -6,12 +7,13 @@ from tensorflow import keras
 import numpy as np
 
 from tensorflow.keras.models import model_from_json
+from tensorflow.keras.backend import set_session
 
-import asyncio
 import os
 from aizero import ResourceNotFoundException
 from aizero import get_resource as rsrc
 from aizero import Resource
+from aizero.utils import run_thread
 
 
 class PrintDot(keras.callbacks.Callback):
@@ -225,6 +227,10 @@ class Learning:
         self.values_cache = "{}".format(self.model_dir)
         self.model_path = "{}/cp.h5".format(self.model_dir)
 
+        config = tf.compat.v1.ConfigProto()
+        config.gpu_options.allow_growth = True
+        self.session = tf.compat.v1.Session(graph=tf.Graph(), config=config)
+
         shape = features_shape(features)
 
         if model is None:
@@ -237,10 +243,14 @@ class Learning:
                     keras.layers.Dense(1)
                 ]
 
-            self.model = keras.Sequential(layers)
+            with self.session.graph.as_default():
+                set_session(self.session)
+                self.model = keras.Sequential(layers)
 
             if model_json is not None:
-                self.model = model_from_json(model_json)
+                with self.session.graph.as_default():
+                    set_session(self.session)
+                    self.model = model_from_json(model_json)
 
             # optimizer = tf.train.RMSPropOptimizer(0.001, decay=0.0)
 
@@ -256,14 +266,18 @@ class Learning:
             if loss is None:
                 loss = keras.losses.mean_squared_error
 
-            self.model.compile(loss=loss,
-                               optimizer=optimizer,
-                               metrics=['mean_absolute_error',
-                                        'mean_squared_error'])
+            with self.session.graph.as_default():
+                set_session(self.session)
+                self.model.compile(loss=loss,
+                                   optimizer=optimizer,
+                                   metrics=['mean_absolute_error',
+                                            'mean_squared_error'])
         else:
             self.model = model
 
-        self.restore()
+        with self.session.graph.as_default():
+            set_session(self.session)
+            self.restore()
 
     def restore(self):
         if self.persist:
@@ -383,18 +397,22 @@ class Learning:
         if convert_func is not None:
             normed_train_data = convert_func(normed_train_data)
 
-        history = self.model.fit(
-            normed_train_data, train_labels,
-            epochs=epochs, validation_split=0.2, verbose=0,
-            callbacks=callbacks)
+        with self.session.graph.as_default():
+            set_session(self.session)
+            history = self.model.fit(
+                normed_train_data, train_labels,
+                epochs=epochs, validation_split=0.2, verbose=0,
+                callbacks=callbacks)
 
         try:
             if and_test:
                 if convert_func is not None:
                     normed_test_data = convert_func(normed_test_data)
 
-                loss, mae, mse = self.model.evaluate(
-                    normed_test_data, test_labels, verbose=0)
+                with self.session.graph.as_default():
+                    set_session(self.session)
+                    loss, mae, mse = self.model.evaluate(
+                        normed_test_data, test_labels, verbose=0)
 
                 print("\ntesting set mean abs Error: {:5.2f}".format(mae))
                 self.mean_absolute_error = mae
@@ -445,7 +463,9 @@ class Learning:
         if convert_func is not None:
             dataset_norm = convert_func(dataset_norm)
 
-        prediction = self.model.predict(dataset_norm).flatten()
+        with self.session.graph.as_default():
+            set_session(self.session)
+            prediction = self.model.predict(dataset_norm).flatten()
 
         print("prediction: {}".format(prediction))
 
@@ -462,8 +482,10 @@ class Learning:
         normed_test_data = normalize(
             test_dataset, stats['mean'], stats['std'])
 
-        loss, mae, mse = self.model.evaluate(
-            normed_test_data, test_labels, verbose=0)
+        with self.session.graph.as_default():
+            set_session(self.session)
+            loss, mae, mse = self.model.evaluate(
+                normed_test_data, test_labels, verbose=0)
 
         return mae
 

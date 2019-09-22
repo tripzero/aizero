@@ -1,3 +1,4 @@
+import asyncio
 import sys
 import traceback
 
@@ -7,6 +8,7 @@ from datetime import datetime, timedelta
 from aizero.resource import Resource, MINS, get_resource
 from aizero.resource_py3 import Py3Resource as resource_poll
 from aizero.sys_time import get_current_datetime
+from asyncio.utils import run_thread
 
 
 def last_day_of_month(any_day):
@@ -81,7 +83,8 @@ class WeatherResource(Resource):
         self.lon = get_resource(
             "ConfigurationResource").config["longitude"]
 
-        self.poller = resource_poll(self.poll_func, MINS(15))
+        self.poller = resource_poll(
+            self.poll_func, MINS(15), is_coroutine=True)
 
     def get_hourly_temperature(self, hour):
         return hourly_temperature(self.key, hour, "Hillsboro")
@@ -105,11 +108,14 @@ class WeatherResource(Resource):
         fc_standard["forecast_cloud_cover"] = fc['clouds']['all']
         fc_standard['forecast_conditions'] = fc["weather"][0]["main"]
 
+    @asyncio.coroutine
     def poll_func(self):
 
         try:
-            current_observation = weatherConditions(
-                self.key, self.lat, self.lon)
+            current_observation = yield from run_thread(weatherConditions,
+                                                        self.key,
+                                                        self.lat,
+                                                        self.lon)
             if current_observation:
                 self.setValue(
                     "temperature", current_observation["temperature"])
@@ -118,7 +124,8 @@ class WeatherResource(Resource):
                 self.set_value("cloud_cover",
                                current_observation["cloud_cover"])
 
-            tomorrow = forecast(self.key, self.lat, self.lon)
+            tomorrow = yield from run_thread(forecast, self.key,
+                                             self.lat, self.lon)
 
             if tomorrow is not None:
                 self.setValue("forecast_high", tomorrow["main"]["temp_max"])

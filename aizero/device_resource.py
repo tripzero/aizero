@@ -318,6 +318,7 @@ class RunIfTemperaturePolicy(RuntimePolicy):
 
         def wait_resource(gr):
             self.temperature = gr(sensor_name).subscribe2("temperature")
+
             self.conditions.append(self.can_run)
 
         self.rsrcs = ResourceRequires([sensor_name],
