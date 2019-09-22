@@ -282,7 +282,6 @@ class Learning:
     def restore(self):
         if self.persist:
             try:
-                self.model.load_weights(self.model_path)
 
                 for feature in self.all_features:
                     cache_dir = "{}/{}.xz".format(
@@ -296,6 +295,8 @@ class Learning:
                         feature.feature_name, len(feature.dataframe)))
 
                 self.get_stats(self.to_dataframe(self.all_features))
+
+                self.model.load_weights(self.model_path)
 
             except Exception as ex:
                 print(ex)
