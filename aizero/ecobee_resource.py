@@ -585,6 +585,10 @@ class EcobeeResource(DeviceResource):
                 pass
 
     def process(self):
+        asyncio.get_event_loop().create_task(self.do_process())
+
+    @asyncio.coroutine
+    def do_process(self):
         print("ecobee processing: ")
         print("time: {}".format(get_current_datetime()))
 
@@ -593,8 +597,10 @@ class EcobeeResource(DeviceResource):
 
         occupancy_prediction_60 = None
 
+        op = self.occupancy_predictor
+
         if self.occupancy_predictor is not None:
-            occupancy_prediction_60 = self.occupancy_predictor.predict_occupancy(
+            occupancy_prediction_60 = op.predict_occupancy(
                 predict_time)
 
         if occupancy_prediction_60 is None:
@@ -605,13 +611,16 @@ class EcobeeResource(DeviceResource):
 
         max_room_temp_delta = 10
 
-        sensor_min, sensor_max = self.ecobee_service.get_sensor_min_max(
+        sensor_min, sensor_max = yield from run_thread(
+            self.ecobee_service.get_sensor_min_max,
             "occupancy", "true")
 
         if sensor_min is not None:
-            temp_max = self.ecobee_service.get_sensor_value(
+            temp_max = yield from run_thread(
+                self.ecobee_service.get_sensor_value,
                 sensor_max, "temperature")
-            temp_min = self.ecobee_service.get_sensor_value(
+            temp_min = yield from run_thread(
+                self.ecobee_service.get_sensor_value,
                 sensor_min, "temperature")
 
             print("min: {} max: {}".format(temp_min, temp_max))
@@ -646,18 +655,21 @@ class EcobeeResource(DeviceResource):
                 print("our total usage is estimated: {}".format(
                     self.device_manager.running_power))
 
-                self.ecobee_service.set_hold(
+                yield from run_thread(
+                    self.ecobee_service.set_hold,
                     self.ecobee_service.temperature_setpoint_cool + 0.5,
                     self.ecobee_service.temperature_setpoint_heat,
                     custom_program_name="overbudget")
 
             elif can_run and current_program == "overbudget":
-                self.ecobee_service.resume_program(resume_all=False)
+                yield from run_thread(self.ecobee_service.resume_program,
+                                      resume_all=False)
 
                 print("ecobee: resuming program")
 
             elif current_program == Programs.away:
-                self.ecobee_service.set_program(Programs.home)
+                yield from run_thread(self.ecobee_service.set_program,
+                                      Programs.home)
 
                 print("ecobee: set program 'home'")
 
@@ -667,10 +679,12 @@ class EcobeeResource(DeviceResource):
                     temp_max - temp_min > max_room_temp_delta):
 
                 print("setting circulation program")
-                self.ecobee_service.set_hold(fan_mode="on")
+                yield from run_thread(self.ecobee_service.set_hold,
+                                      fan_mode="on")
 
             elif (self.ecobee_service.fan_mode == "on"):
-                self.ecobee_service.set_hold(fan_mode="auto")
+                yield from run_thread(self.ecobee_service.set_hold,
+                                      fan_mode="auto")
 
                 # if no one is home AND no one is usually home
         elif (not self.ecobee_service.global_occupancy and
@@ -678,7 +692,8 @@ class EcobeeResource(DeviceResource):
               current_program != Programs.away and
               current_program != Programs.hold):
 
-            self.ecobee_service.set_program(Programs.away)
+            yield from run_thread(self.ecobee_service.set_program,
+                                  Programs.away)
             print("ecobee: set program 'away'")
 
         # Is someone going to be home in the next 60 mins?
@@ -687,7 +702,8 @@ class EcobeeResource(DeviceResource):
               occupancy_prediction_60 >= 0.70 and
               current_program == Programs.away):
 
-            self.ecobee_service.set_program(Programs.home)
+            yield from run_thread(self.ecobee_service.set_program,
+                                  Programs.home)
             print("ecobee: set program to 'Home'")
 
         """else:
@@ -706,12 +722,14 @@ class EcobeeResource(DeviceResource):
 
             sp_cool = self.ecobee_service.temperature_setpoint_cool
             sp_heat = self.ecobee_service.temperature_setpoint_heat
+
             if heat_mod or cool_mod:
                 if (self.setpoint_cool + cool_mod != sp_cool or
                         self.setpoint_heat + heat_mod != sp_heat):
 
-                    self.ecobee_service.set_hold(self.setpoint_cool + cool_mod,
-                                                 self.setpoint_heat + heat_mod)
+                    yield from run_thread(self.ecobee_service.set_hold,
+                                          self.setpoint_cool + cool_mod,
+                                          self.setpoint_heat + heat_mod)
 
     @asyncio.coroutine
     def update_properties(self):

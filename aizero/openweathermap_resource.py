@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from aizero.resource import Resource, MINS, get_resource
 from aizero.resource_py3 import Py3Resource as resource_poll
 from aizero.sys_time import get_current_datetime
-from asyncio.utils import run_thread
+from aizero.utils import run_thread
 
 
 def last_day_of_month(any_day):

@@ -883,6 +883,8 @@ class DeviceResource(Resource):
 
         serialized["policies"] = policies_serialized
 
+        return serialized
+
 
 class RemoteRestDeviceResource(RemoteRestResource, DeviceResource):
 
