@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-import asyncio
-
 import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
@@ -13,10 +11,10 @@ import os
 from aizero import ResourceNotFoundException
 from aizero import get_resource as rsrc
 from aizero import Resource
-from aizero.utils import run_thread
 
 
 class PrintDot(keras.callbacks.Callback):
+
     def on_epoch_end(self, epoch, logs):
         if epoch % 100 == 0:
             print('')
@@ -637,7 +635,8 @@ def model_from_checkpoint():
 
     learner = Learning("test_keras", features, "MPG", persist=True)
 
-    # Don't train. should load weights automatically from test_create_cp_learning
+    # Don't train. should load weights automatically from
+    # test_create_cp_learning
 
     val = learner.predict()
 
@@ -885,7 +884,8 @@ def test_uninitialized_resource():
                   features=[f1, f2],
                   prediction_feature="a1")
 
-    # don't crash here because r1 and r2 do not have any columns set in dataframe
+    # don't crash here because r1 and r2 do not have any columns set in
+    # dataframe
 
 
 def main():

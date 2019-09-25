@@ -503,6 +503,7 @@ class OccupancySensor(Resource):
 
 
 class EcobeeResource(DeviceResource):
+
     def __init__(self, occupancy_predictor_name=None, power_usage=1750):
         DeviceResource.__init__(self, "EcobeeResource",
                                 power_usage=power_usage,
@@ -600,7 +601,8 @@ class EcobeeResource(DeviceResource):
         op = self.occupancy_predictor
 
         if self.occupancy_predictor is not None:
-            occupancy_prediction_60 = op.predict_occupancy(
+            occupancy_prediction_60 = yield from run_thread(
+                op.predict_occupancy,
                 predict_time)
 
         if occupancy_prediction_60 is None:
