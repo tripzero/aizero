@@ -103,8 +103,9 @@ class OccupancyPredictorResource(DeviceResource):
                                    loss="binary_crossentropy")
 
         self.poller = resource_poll(
-            self.poll_func, MINS(10), is_coroutine=True)
-        self.poller = resource_poll(self.wait_can_run, HOURS(1))
+        self.poller = resource_poll(
+            lambda: self.wait_can_run(interval=MINS(5)),
+            HOURS(1))
 
     @asyncio.coroutine
     def train(self, and_test=True):

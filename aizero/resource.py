@@ -111,7 +111,7 @@ class ResourcePropertySubscription:
         return self.resource.get_value(self.variable)
 
     def __call__(self):
-        return self.resource.get_value(self.variable)
+        return self.value
 
 
 class Resource(object):
@@ -447,7 +447,9 @@ class Resource(object):
         return True
 
     def to_json(self):
-        return json.dumps(self.variables)
+        vars = self.variables
+        vars.update({"name": self.name})
+        return json.dumps(vars)
 
 
 def test_subscribe2():
