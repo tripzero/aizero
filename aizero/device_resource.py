@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import numpy as np
 
 from aizero.resource import Resource, ResourceNotFoundException, MINS
@@ -173,7 +174,8 @@ class OffIfUnoccupied(RuntimePolicy):
         on resource.
     """
 
-    def __init__(self, occupancy_resource_name, conditions=None):
+    def __init__(self, occupancy_resource_name, conditions=None,
+                 occupancy_property="occupancy"):
 
         if conditions is None:
             conditions = []
@@ -186,34 +188,18 @@ class OffIfUnoccupied(RuntimePolicy):
 
         def wait_occupancy(gr):
             self.occupancy_resource = gr(occupancy_resource_name)
+            self.conditions.append(self.can_run)
 
-            if self.occupancy_resource.hasProperty("predicted_occupancy"):
+            if self.occupancy_resource.hasProperty(occupancy_property):
                 self.occupancy = self.occupancy_resource.subscribe2(
-                    "predicted_occupancy")
-            elif self.occupancy_resource.hasProperty("occupancy"):
-                self.occupancy = self.occupancy_resource.subscribe2(
-                    "occupancy")
+                    occupancy_property)
             else:
                 raise ValueError(
-                    """resource {} does not have occupancy or \
-                    predicted_occupancy resources""".format(
-                        occupancy_resource_name))
+                    """resource {} does not {} property""".format(
+                        occupancy_resource_name, occupancy_property))
 
         self.rsrcs = ResourceRequires([occupancy_resource_name],
                                       wait_occupancy)
-
-    def _pass_process(self, device):
-        pass
-
-    def process(self, device):
-        if (self.can_run not in self.conditions and
-            self.occupancy is not None and
-                self.occupancy.value is not None):
-
-            self.conditions.append(self.can_run)
-
-            # we are ready. no more need for process to do anything
-            self.process = self._pass_process
 
     @asyncio.coroutine
     def can_run_check_timeout(self):
@@ -228,11 +214,14 @@ class OffIfUnoccupied(RuntimePolicy):
             return
 
         is_occupied = self.occupancy.value
-        # print("{} is occupied: {}".format(self.occupancy_resource.name,
-        #                                 is_occupied))
+        logging.debug("{} is occupied: {}".format(self.occupancy.resource.name,
+                                                  is_occupied))
 
-        if not is_occupied:
+        logging.debug(self.occupancy.variable)
+
+        if is_occupied is not None and not is_occupied:
             asyncio.get_event_loop().create_task(self.can_run_check_timeout())
+            logging.debug("condition returning False")
             return False
 
     def to_json(self):
@@ -243,9 +232,44 @@ class OffIfUnoccupied(RuntimePolicy):
 
         serialized = json.loads(super().to_json())
 
-        serialized["associated_sensor"] = self.occupancy_resource.name
+        serialized["associated_sensor"] = json.loads(
+            self.occupancy_resource.to_json())
 
         return json.dumps(serialized)
+
+
+class OnIfOccupied(OffIfUnoccupied):
+    """
+        calls set(False) on device if the assigned OccupancyResource has
+        occupancy of False.
+        Requires "occupancy" or "predicted_occupancy" property be available
+        on resource.
+    """
+
+    def __init__(self, occupancy_resource_name, conditions=None,
+                 occupancy_property="occupancy"):
+
+        if conditions is None:
+            conditions = []
+
+        super().__init__(occupancy_resource_name,
+                         conditions=conditions,
+                         occupancy_property=occupancy_property)
+
+    def can_run(self):
+        if self.checked:
+            return
+
+        is_occupied = self.occupancy.value
+        logging.debug("{} is occupied: {}".format(self.occupancy.resource.name,
+                                                  is_occupied))
+
+        logging.debug(self.occupancy.variable)
+
+        if is_occupied is not None and is_occupied:
+            asyncio.get_event_loop().create_task(self.can_run_check_timeout())
+            logging.debug("condition returning False")
+            return True
 
 
 class LinkDevicePolicy(RuntimePolicy):
@@ -514,6 +538,8 @@ class DeviceManager(Resource):
                     print("\n".join(can_not_run_policies))
                     device.stop()
                     # self.debug_print_capacity()
+            elif has_any_conditions and can_run is None:
+                self.debug_print("can_run is None")
 
     def device_power_usage_changed(self, value):
         pass
@@ -770,7 +796,7 @@ class DeviceResource(Resource):
 
         return self._max_power_usage
 
-    def wait_can_run(self, callback=None):
+    def wait_can_run(self, callback=None, interval=1):
         def wait_func():
 
             if not self.can_run():
@@ -783,7 +809,7 @@ class DeviceResource(Resource):
 
             return False
 
-        poll_while_true(wait_func, 1)
+        poll_while_true(wait_func, interval)
 
     def can_run(self):
         return self.device_manager and self.device_manager.can_run(self)
@@ -879,11 +905,11 @@ class DeviceResource(Resource):
         policies_serialized = []
 
         for policy in self._runtime_policy:
-            policies_serialized.append(policy.to_json())
+            policies_serialized.append(json.loads(policy.to_json()))
 
         serialized["policies"] = policies_serialized
 
-        return serialized
+        return json.dumps(serialized)
 
 
 class RemoteRestDeviceResource(RemoteRestResource, DeviceResource):
