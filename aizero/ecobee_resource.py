@@ -505,15 +505,15 @@ class OccupancySensor(Resource):
 class EcobeeResource(DeviceResource):
 
     def __init__(self, occupancy_predictor_name=None, power_usage=1750):
-        DeviceResource.__init__(self, "EcobeeResource",
-                                power_usage=power_usage,
-                                variables=["occupancy",
-                                           "setpoint_heat",
-                                           "setpoint_cool",
-                                           "temperature",
-                                           "humidity",
-                                           "running_program"],
-                                priority=RuntimePriority.high)
+        super().__init__("EcobeeResource",
+                         power_usage=power_usage,
+                         variables=["occupancy",
+                                    "setpoint_heat",
+                                    "setpoint_cool",
+                                    "temperature",
+                                    "humidity",
+                                    "running_program"],
+                         priority=RuntimePriority.high)
 
         self.subscribe("temperature", lambda v: self.process())
         self.subscribe("running_program", lambda v: self.process())
@@ -735,7 +735,6 @@ class EcobeeResource(DeviceResource):
 
     @asyncio.coroutine
     def update_properties(self):
-
         self.setValue("occupancy", self.ecobee_service.global_occupancy)
         self.setValue("humidity", self.ecobee_service.humidity)
         self.setValue("temperature", self.ecobee_service.temperature)
@@ -749,11 +748,10 @@ class EcobeeResource(DeviceResource):
     @asyncio.coroutine
     def poll_func(self):
         try:
-
             yield from run_thread(self.ecobee_service.update)
             yield from self.create_occupancy_resources()
 
-            self.update_properties()
+            yield from self.update_properties()
 
             # this is managed by hvac_cooler
             # TODO: we can reenable if service.cooling becomes more reliable
