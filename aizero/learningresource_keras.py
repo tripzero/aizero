@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
+import asyncio
 import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
 import numpy as np
 
 from tensorflow.keras.models import model_from_json
-from tensorflow.keras.backend import set_session
+from tensorflow.compat.v1.keras.backend import set_session
 
 import os
 from aizero import ResourceNotFoundException
@@ -421,7 +422,9 @@ class Learning:
         # persist model
 
         if self.persist:
-            self.model.save_weights(self.model_path)
+            with self.session.graph.as_default():
+                set_session(self.session)
+                self.model.save_weights(self.model_path)
 
         return history
 
