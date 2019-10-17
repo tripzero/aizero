@@ -14,7 +14,7 @@ Operating System :: POSIX :: Linux
 """
 
 setup(name='aizero',
-      version='1.5.0',
+      version='1.6.0',
       description='Python module for simple machine learning',
       author='Kevron Rees',
       author_email='tripzero.kev@gmail.com',
