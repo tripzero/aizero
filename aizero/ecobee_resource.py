@@ -318,9 +318,13 @@ class Ecobee:
 
     def get_sensors(self, sensor_name=None,
                     capability=None, capability_value=None):
-        sensors = self.thermostat.remote_sensors
 
         ret_sensors = []
+
+        if self.thermostat is None:
+            return ret_sensors
+
+        sensors = self.thermostat.remote_sensors
 
         for sensor in sensors:
             if sensor_name and sensor.name != sensor_name:
