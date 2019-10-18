@@ -2,10 +2,11 @@ import asyncio
 import json
 import logging
 import numpy as np
+import time
 
 from aizero.resource import Resource, ResourceNotFoundException, MINS
 from aizero.resource import get_resource as gr
-from aizero.resource import ResourceRequires
+from aizero.resource import ResourceRequires, HOURS
 from aizero.remoteresource import RemoteRestResource
 from aizero.resource_py3 import Py3PollWhileTrue as poll_while_true
 from aizero.resource_py3 import Py3Resource as resource_poll
@@ -143,7 +144,7 @@ class RuntimePolicy:
         return json.dumps(serialized)
 
 
-class GroupPolicy(RuntimePolicy):
+class PolicyGroup(RuntimePolicy):
 
     def __init__(self, policies=None, or_policies=None):
 
@@ -152,6 +153,9 @@ class GroupPolicy(RuntimePolicy):
 
         if or_policies is None:
             or_policies = []
+
+        self.policies = policies
+        self.or_policies = or_policies
 
         conditions = []
 
@@ -172,6 +176,13 @@ class GroupPolicy(RuntimePolicy):
         super().__init__(policy=RuntimePolicies.group,
                          conditions=conditions,
                          or_conditions=or_conditions)
+
+    def process(self, device):
+        for policy in self.policies:
+            policy.process(device)
+
+        for policy in self.or_policies:
+            policy.process(device)
 
     def to_json(self):
         serialized = json.loads(super().to_json())
@@ -435,6 +446,69 @@ class RunIfTemperaturePolicy(RuntimePolicy):
         serialized["setpoint"] = self.set_point
 
         return json.dumps(serialized)
+
+
+class MinimumRuntime(RuntimePolicy):
+    """ Creates a condition that ruturns true if running time of device
+        is less than the minimum specified running time.
+    """
+
+    def __init__(self, device, min_runtime, **kwargs):
+        """
+        args:
+            device: device to monitor running time
+            min_runtime: minimum running time in seconds.
+        """
+        super().__init__(policy="minimum_runtime", **kwargs)
+
+        self.device = device
+        self.min_runtime = min_runtime
+
+        self.current_runtime = 0
+        self.last_time = None
+
+        self.conditions.append(self.can_run)
+
+        asyncio.get_event_loop().create_task(self.reset())
+
+    @asyncio.coroutine
+    def reset(self):
+        while True:
+            yield from asyncio.sleep(HOURS(24))
+
+            self.current_runtime = 0
+
+    def process(self, device):
+        running = device.running()
+
+        if running and self.last_time is None:
+            self.last_time = time.monotonic()
+            return
+
+        if running:
+            self.current_runtime += time.monotonic() - self.last_time
+            self.last_time = time.monotonic()
+
+    def can_run(self):
+        return self.current_runtime < self.min_runtime
+
+
+class TimeOfUsePolicy(RuntimePolicy):
+
+    def __init__(self, time_of_use_mode, **kwargs):
+        super().__init__(policy="time_of_use", **kwargs)
+
+        self.time_of_use_mode = time_of_use_mode
+
+        self.rsrcs = ResourceRequires(["TimeOfUse"],
+                                      self.start)
+
+    def start(self, rsrcs):
+        self.conditions.append(self.can_run)
+
+    def can_run(self):
+        tou = self.rsrcs("TimeOfUse")
+        return self.time_of_use_mode == tou.get_value("mode")
 
 
 class DeviceManager(Resource):
@@ -1188,8 +1262,8 @@ def test_group_policy():
     policy1 = RuntimePolicy(conditions=[lambda: True])
     policy2 = RuntimePolicy(conditions=[lambda: False])
 
-    and_group = GroupPolicy(policies=[policy1, policy2])
-    or_group = GroupPolicy(policies=[policy1], or_policies=[policy2])
+    and_group = PolicyGroup(policies=[policy1, policy2])
+    or_group = PolicyGroup(policies=[policy1], or_policies=[policy2])
 
     fake_device = DeviceResource("fake-device", 800)
     fake_device_or = DeviceResource("fake-device-or", 800)
@@ -1204,6 +1278,35 @@ def test_group_policy():
 
     assert not fake_device.running()
     assert fake_device_or.running()
+
+
+def test_minimum_runtime():
+    Resource.clearResources()
+    device_manager = DeviceManager(max_power_budget=800)
+
+    device = DeviceResource("fake_device", 2000)
+
+    policy1 = MinimumRuntime(device, 1)
+    policy2 = RunIfCanPolicy()
+
+    group = PolicyGroup(or_policies=[policy1, policy2])
+
+    device.set_runtime_policy([group])
+
+    device.run()
+
+    device_manager.process_managed_devices()
+
+    assert device.running()
+    assert policy1.last_time is not None
+
+    asyncio.get_event_loop().run_until_complete(asyncio.sleep(2))
+
+    device_manager.process_managed_devices()
+
+    assert policy1.current_runtime > 1
+    assert not policy1.can_run()
+    assert not device.running()
 
 
 if __name__ == "__main__":
