@@ -32,6 +32,10 @@ class RuntimePolicies:
     """
     none = "none"
 
+    """ Policy: GroupPolicy
+        policy containing several other policies
+    """
+
     """ Policy: run_if_can
         Device will run if can_run() returns True.  This is identical to
         conditions = [device.can_run].
@@ -76,12 +80,17 @@ class RuntimePolicy:
         A condition can return None, which indicates no action.
     """
 
-    def __init__(self, policy=RuntimePolicies.none, conditions=None):
+    def __init__(self, policy=RuntimePolicies.none,
+                 conditions=None, or_conditions=None):
         if conditions is None:
             conditions = []
 
+        if or_conditions is None:
+            or_conditions = []
+
         self.policy = policy
         self.conditions = conditions
+        self.or_conditions = or_conditions
 
     def process(self, device):
         pass
@@ -108,6 +117,14 @@ class RuntimePolicy:
             if cond_ret_val is not None:
                 ret_val &= cond_ret_val
 
+        for condition in self.or_conditions:
+            cond_ret_val = condition()
+
+            do_something |= cond_ret_val is not None
+
+            if cond_ret_val is not None:
+                ret_val |= cond_ret_val
+
         if do_something:
             return ret_val
 
@@ -122,6 +139,29 @@ class RuntimePolicy:
         serialized["conditions"] = conditions
 
         return json.dumps(serialized)
+
+
+class GroupPolicy(RuntimePolicy):
+
+    def __init__(self, policies=None, or_policies=None):
+
+        conditions = []
+
+        for policy in policies:
+            if not isinstance(policy, RuntimePolicy):
+                raise ValueError("must be RuntimePolicy in GroupPolicy")
+
+            conditions.append(policy.run_conditions)
+
+        or_conditions = []
+
+        for policy in or_policies:
+            if not isinstance(policy, RuntimePolicy):
+                raise ValueError("must be RuntimePolicy in GroupPolicy")
+
+            or_conditions.append(policy.run_conditions)
+
+        super().__init__(conditions=conditions, or_conditions=or_conditions)
 
 
 class RunIfCanPolicy(RuntimePolicy):

@@ -102,7 +102,7 @@ class OccupancyPredictorResource(DeviceResource):
                                    layers=layers,
                                    loss="binary_crossentropy")
 
-        self.poller = resource_poll(
+        self.poller = resource_poll(self.poll_func, MINS(10))
         self.poller = resource_poll(
             lambda: self.wait_can_run(interval=MINS(5)),
             HOURS(1))
@@ -154,10 +154,8 @@ class OccupancyPredictorResource(DeviceResource):
             traceback.print_exception(exc_type, exc_value, exc_traceback,
                                       limit=6, file=sys.stdout)
 
-    @asyncio.coroutine
     def poll_func(self):
-        predict_val = yield from run_thread(self.predict_occupancy)
-
+        predict_val = self.predict_occupancy()
         if predict_val is not None:
             self.setValue("occupancy_prediction", bool(
                 predict_val > self.prediction_threshold))
@@ -179,41 +177,6 @@ class OccupancyPredictorResource(DeviceResource):
 
     def stop(self):
         DeviceResource.stop(self)
-
-
-def generate_fake_data(occupancy_rsrc):
-    from datetime import datetime, timedelta
-    import random
-
-    d = get_resource("DayOfWeekResource")
-    t = get_resource("HourOfDayResource")
-
-    muhtime = datetime.now()
-    for i in range(1000):
-        muhtime += timedelta(hours=i)
-
-        d.set_value("day_of_week", muhtime)
-        t.set_value("hour_of_day", muhtime)
-
-        occupancy = random.choice([True, False])
-
-        occupancy_rsrc.set_value("occupancy", occupancy)
-
-
-def test_train():
-    DayOfWeekResource()
-    HourOfDayResource()
-
-    occupancy = Resource("FakeOccupancy", ["occupancy"])
-
-    generate_fake_data(occupancy)
-
-    predictor = OccupancyPredictorResource("TestOccupancyPredictor",
-                                           occupancy.name)
-
-    asyncio.get_event_loop().run_until_complete(predictor.train())
-
-    prediction = predictor.predict_occupancy()
 
 
 def main():
