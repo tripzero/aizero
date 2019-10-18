@@ -35,6 +35,7 @@ class RuntimePolicies:
     """ Policy: GroupPolicy
         policy containing several other policies
     """
+    group = "policy_group"
 
     """ Policy: run_if_can
         Device will run if can_run() returns True.  This is identical to
@@ -67,6 +68,7 @@ class RuntimePolicies:
         """
         returns policy instance for matching policy_name or None
         """
+        # TODO: implement
         pass
 
 
@@ -145,6 +147,12 @@ class GroupPolicy(RuntimePolicy):
 
     def __init__(self, policies=None, or_policies=None):
 
+        if policies is None:
+            policies = []
+
+        if or_policies is None:
+            or_policies = []
+
         conditions = []
 
         for policy in policies:
@@ -161,17 +169,30 @@ class GroupPolicy(RuntimePolicy):
 
             or_conditions.append(policy.run_conditions)
 
-        super().__init__(conditions=conditions, or_conditions=or_conditions)
+        super().__init__(policy=RuntimePolicies.group,
+                         conditions=conditions,
+                         or_conditions=or_conditions)
+
+    def to_json(self):
+        serialized = json.loads(super().to_json())
+
+        serialized["policies"] = [policy.to_json()
+                                  for policy in self.policies]
+        serialized["or_policies"] = [policy.to_json()
+                                     for policy in self.or_policies]
+
+        return json.dumps(serialized)
 
 
 class RunIfCanPolicy(RuntimePolicy):
 
-    def __init__(self, conditions=None):
+    def __init__(self, conditions=None, or_conditions=None):
         if conditions is None:
             conditions = []
 
         super().__init__(policy=RuntimePolicies.run_if_can,
-                         conditions=conditions)
+                         conditions=conditions,
+                         or_conditions=or_conditions)
 
         self.conditions.append(self.can_run)
         self.device = None
@@ -190,12 +211,13 @@ class DimIfCannotPolicy(RuntimePolicy):
         Dim the light to dim_level if can_run() is False
     """
 
-    def __init__(self, dim_level=50, conditions=None):
+    def __init__(self, dim_level=50, conditions=None, or_conditions=None):
         if conditions is None:
             conditions = []
 
         super().__init__(policy=RuntimePolicies.dim_if_cannot,
-                         conditions=conditions)
+                         conditions=conditions,
+                         or_conditions=or_conditions)
 
         self.dim_level = dim_level
 
@@ -215,13 +237,15 @@ class OffIfUnoccupied(RuntimePolicy):
     """
 
     def __init__(self, occupancy_resource_name, conditions=None,
+                 or_conditions=None,
                  occupancy_property="occupancy"):
 
         if conditions is None:
             conditions = []
 
         super().__init__(policy=RuntimePolicies.off_if_unoccupied,
-                         conditions=conditions)
+                         conditions=conditions,
+                         or_conditions=or_conditions)
 
         self.checked = False
         self.occupancy = None
@@ -287,6 +311,7 @@ class OnIfOccupied(OffIfUnoccupied):
     """
 
     def __init__(self, occupancy_resource_name, conditions=None,
+                 or_conditions=None,
                  occupancy_property="occupancy"):
 
         if conditions is None:
@@ -294,6 +319,7 @@ class OnIfOccupied(OffIfUnoccupied):
 
         super().__init__(occupancy_resource_name,
                          conditions=conditions,
+                         or_conditions=or_conditions,
                          occupancy_property=occupancy_property)
 
     def can_run(self):
@@ -318,12 +344,11 @@ class LinkDevicePolicy(RuntimePolicy):
     this will too.
     """
 
-    def __init__(self, linked_device_name, conditions=None):
-        if conditions is None:
-            conditions = []
-
+    def __init__(self, linked_device_name, conditions=None,
+                 or_conditions=None):
         super().__init__(policy=RuntimePolicies.link_device_policy,
-                         conditions=conditions)
+                         conditions=conditions,
+                         or_conditions=or_conditions)
 
         self.linked_device_running = None
 
@@ -369,12 +394,14 @@ class LinkDevicePolicy(RuntimePolicy):
 
 class RunIfTemperaturePolicy(RuntimePolicy):
 
-    def __init__(self, sensor_name, set_point, conditions=None):
+    def __init__(self, sensor_name, set_point, conditions=None,
+                 or_conditions=None):
         if conditions is None:
             conditions = []
 
         super().__init__(policy=RuntimePolicies.run_if_temperature,
-                         conditions=conditions)
+                         conditions=conditions,
+                         or_conditions=or_conditions)
 
         self.set_point = set_point
         self.temperature = None
@@ -1143,7 +1170,7 @@ def test_zero_power_usage_can_run():
 
     Resource.clearResources()
 
-    device_manager = DeviceManager(max_power_budget=800)
+    DeviceManager(max_power_budget=800)
     device_1 = DeviceResource("Power Hog 3000", 800)
 
     device_1.run()
@@ -1153,7 +1180,32 @@ def test_zero_power_usage_can_run():
     assert not device_2.can_run()
 
 
+def test_group_policy():
+
+    Resource.clearResources()
+    device_manager = DeviceManager(max_power_budget=800)
+
+    policy1 = RuntimePolicy(conditions=[lambda: True])
+    policy2 = RuntimePolicy(conditions=[lambda: False])
+
+    and_group = GroupPolicy(policies=[policy1, policy2])
+    or_group = GroupPolicy(policies=[policy1], or_policies=[policy2])
+
+    fake_device = DeviceResource("fake-device", 800)
+    fake_device_or = DeviceResource("fake-device-or", 800)
+
+    fake_device.set_runtime_policy([and_group])
+    fake_device_or.set_runtime_policy([or_group])
+
+    fake_device.run()
+    fake_device_or.run()
+
+    device_manager.process_managed_devices()
+
+    assert not fake_device.running()
+    assert fake_device_or.running()
+
+
 if __name__ == "__main__":
     test_main()
-    test_remote()
     test_occupancy_policy()
