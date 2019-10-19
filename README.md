@@ -13,14 +13,18 @@ Other supported features include
 - device time of use modes
 - device policies (for more complex automation)
 - combine data from resources to create a machine learning model 
-  (see aizero/occupancy_predictor.py)
+  (see examples/temperature_predictor.py)
 - mqtt integration
-- zwave support
+- zwave support (incomplete)
 
 ## Get started
 
 ### Install:
+Clone and:
+
+```bash
 sudo pip3 install .
+```
 
 ### Write some code:
 
