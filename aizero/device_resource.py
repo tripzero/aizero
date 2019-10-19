@@ -102,12 +102,15 @@ class RuntimePolicy:
         """ return if there are conditions or not. if this returns False,
         run_conditions() is not called.
         """
-        return len(self.conditions) > 0
+        return len(self.conditions) > 0 or len(self.or_conditions) > 0
 
     def run_conditions(self):
 
         ret_val = True
         do_something = False
+
+        if not len(self.conditions):
+            ret_val = False
 
         for condition in self.conditions:
             cond_ret_val = condition()
@@ -120,16 +123,21 @@ class RuntimePolicy:
             if cond_ret_val is not None:
                 ret_val &= cond_ret_val
 
+        or_ret_val = False
+
         for condition in self.or_conditions:
             cond_ret_val = condition()
+
+            # print("running 'or' condition from {}: {}: {}".format(
+            #    self.policy, condition.__name__, cond_ret_val))
 
             do_something |= cond_ret_val is not None
 
             if cond_ret_val is not None:
-                ret_val |= cond_ret_val
+                or_ret_val |= cond_ret_val
 
         if do_something:
-            return ret_val
+            return ret_val or or_ret_val
 
     def to_json(self):
         serialized = {}
@@ -161,7 +169,8 @@ class PolicyGroup(RuntimePolicy):
 
         for policy in policies:
             if not isinstance(policy, RuntimePolicy):
-                raise ValueError("must be RuntimePolicy in GroupPolicy")
+                raise ValueError("RuntimePolicy got {} in GroupPolicy".format(
+                    policy))
 
             conditions.append(policy.run_conditions)
 
@@ -169,7 +178,8 @@ class PolicyGroup(RuntimePolicy):
 
         for policy in or_policies:
             if not isinstance(policy, RuntimePolicy):
-                raise ValueError("must be RuntimePolicy in GroupPolicy")
+                raise ValueError("RuntimePolicy got {} in GroupPolicy".format(
+                    policy))
 
             or_conditions.append(policy.run_conditions)
 
@@ -644,6 +654,10 @@ class DeviceManager(Resource):
                 if policy.has_conditions():
                     cond_vals = policy.run_conditions()
 
+                    self.debug_print("cond_vals for {}: {}".format(
+                        cond_vals,
+                        policy.policy))
+
                     if cond_vals is True:
                         can_run_policies.append(policy.policy)
 
@@ -657,7 +671,18 @@ class DeviceManager(Resource):
                             can_run = True
 
                         can_run &= cond_vals
-                    # print("can_run? {}".format(can_run))
+
+                    else:
+                        self.debug_print("cond_vals: {}".format(cond_vals))
+
+                    self.debug_print("can_run? {}".format(can_run))
+
+                else:
+                    self.debug_print(
+                        "policy {} and no conditions".format(policy.policy))
+
+            self.debug_print("has conditions: {}".format(has_any_conditions))
+            self.debug_print("can_run: {}".format(can_run))
 
             if has_any_conditions and can_run:
                 if not device.running():
@@ -681,6 +706,10 @@ class DeviceManager(Resource):
                     # self.debug_print_capacity()
             elif has_any_conditions and can_run is None:
                 self.debug_print("can_run is None")
+            elif not has_any_conditions:
+                self.debug_print("has_any_conditions is False")
+            else:
+                raise Exception("Unknown state")
 
     def device_power_usage_changed(self, value):
         pass
@@ -1282,7 +1311,7 @@ def test_group_policy():
 
 def test_minimum_runtime():
     Resource.clearResources()
-    device_manager = DeviceManager(max_power_budget=800)
+    device_manager = DeviceManager(max_power_budget=800, debug=True)
 
     device = DeviceResource("fake_device", 2000)
 
@@ -1304,9 +1333,42 @@ def test_minimum_runtime():
 
     device_manager.process_managed_devices()
 
+    print(device.to_json())
+
     assert policy1.current_runtime > 1
     assert not policy1.can_run()
+    assert not policy2.can_run()
+    assert not policy1.run_conditions()
+    assert not policy2.run_conditions()
     assert not device.running()
+
+
+def test_time_of_use_policy():
+    Resource.clearResources()
+
+    from aizero.time_of_use_resource import Modes
+
+    dm = DeviceManager(max_power_budget=800, debug=True)
+
+    fake_time_of_use = Resource("TimeOfUse", variables=["mode"])
+    fake_time_of_use.set_value("mode", Modes.on_peak)
+
+    device = DeviceResource("fake_device", 100)
+    device.set_runtime_policy([TimeOfUsePolicy(Modes.off_peak)])
+
+    device.run()
+
+    assert device.running()
+
+    dm.process_managed_devices()
+
+    assert not device.running()
+
+    fake_time_of_use.set_value("mode", Modes.off_peak)
+
+    dm.process_managed_devices()
+
+    assert device.running()
 
 
 if __name__ == "__main__":
