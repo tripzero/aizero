@@ -65,7 +65,9 @@ class MqttCommon:
         asyncio.get_event_loop().create_task(self._ping_loop())
 
     @asyncio.coroutine
-    def do_connect(self, broker):
+    def do_connect(self, broker=None):
+        if broker is None:
+            broker = self.broker
         try:
             yield from self.client.connect(broker, keepalive=5,
                                            version=self.mqtt_protocol_version)
@@ -91,7 +93,10 @@ class MqttCommon:
         while True:
             yield from asyncio.sleep(MINS(3))
             var = "{}/keep_alive".format(self.name)
-            self.client.publish(var, "1")
+            try:
+                self.client.publish(var, "1")
+            except AttributeError:
+                yield from self.do_connect(self.broker)
 
     def on_message(self, client, topic, payload, qos, properties):
         print("on_message({}: {}) please override me in subclass.".format(
