@@ -3,8 +3,21 @@
 """
 import asyncio
 from numpy import float64
-from .resource import Resource, MINS
+from .resource import Resource, MINS, get_resource
 from .sys_time import get_current_datetime
+
+
+def get_global_occupancy_reader(broker="192.168.1.40"):
+    from aizero.mqtt_resource import MqttResource
+
+    return get_resource("GlobalOccupancyReader",
+                        MqttResource,
+                        name="GlobalOccupancyReader",
+                        broker=broker,
+                        variables=["occupancy"],
+                        variable_mqtt_map={
+                            "occupancy": "GlobalOccupancy/occupancy",
+                        })
 
 
 class GlobalOccupancy(Resource):

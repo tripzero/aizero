@@ -502,6 +502,18 @@ class MinimumRuntime(RuntimePolicy):
     def can_run(self):
         return self.current_runtime < self.min_runtime
 
+    def to_json(self):
+        """
+        overrides RuntimePolicy.to_json and adds name of resource
+        associated with this policy
+        """
+
+        serialized = json.loads(super().to_json())
+        serialized["current_runtime"] = self.current_runtime
+        serialized["min_runtime"] = self.min_runtime
+
+        return json.dumps(serialized)
+
 
 class TimeOfUsePolicy(RuntimePolicy):
 
