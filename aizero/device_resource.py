@@ -492,6 +492,7 @@ class MinimumRuntime(RuntimePolicy):
         running = device.running()
 
         if running and self.last_time is None:
+            print("starting current runtime")
             self.last_time = time.monotonic()
             return
 
@@ -499,8 +500,14 @@ class MinimumRuntime(RuntimePolicy):
             self.current_runtime += time.monotonic() - self.last_time
             self.last_time = time.monotonic()
 
+        elif not running and self.last_time is not None:
+            print("stopping current runtime!")
+            self.current_runtime += time.monotonic() - self.last_time
+            self.last_time = None
+
     def can_run(self):
-        return self.current_runtime < self.min_runtime
+        if self.current_runtime < self.min_runtime:
+            return True
 
     def to_json(self):
         """
@@ -1353,6 +1360,41 @@ def test_minimum_runtime():
     assert not policy1.run_conditions()
     assert not policy2.run_conditions()
     assert not device.running()
+
+
+def test_minimum_runtime_on_off_time():
+    Resource.clearResources()
+    device_manager = DeviceManager(max_power_budget=800, debug=True)
+
+    device = DeviceResource("fake_device", 2000)
+
+    policy1 = MinimumRuntime(device, 1)
+
+    device.set_runtime_policy([policy1])
+
+    device.run()
+
+    device_manager.process_managed_devices()
+
+    assert device.running()
+    assert policy1.last_time is not None
+
+    asyncio.get_event_loop().run_until_complete(asyncio.sleep(2))
+
+    device_manager.process_managed_devices()
+
+    assert policy1.current_runtime > 1
+
+    device.stop()
+
+    device_manager.process_managed_devices()
+
+    asyncio.get_event_loop().run_until_complete(asyncio.sleep(5))
+
+    device_manager.process_managed_devices()
+
+    # We stopped at around 2 seconds of runtime.
+    assert policy1.current_runtime < 5
 
 
 def test_time_of_use_policy():
