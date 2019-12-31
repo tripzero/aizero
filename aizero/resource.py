@@ -71,7 +71,7 @@ class ResourceRequires:
 
     def __init__(self, required_resources, fulfilled_callback=None):
 
-        self.resources = {}
+        self._resources = {}
         self.required_resources = required_resources
         self.fulfilled_callback = fulfilled_callback
 
@@ -84,11 +84,14 @@ class ResourceRequires:
                                   self.requirements_callback)
 
     def __call__(self, resource_name):
-        return self.resources[resource_name]
+        return self._resources[resource_name]
+
+    def resources(self):
+        return list(self._resources.values())
 
     def requirements_callback(self):
         for resource in self.required_resources:
-            self.resources[resource] = get_resource(resource)
+            self._resources[resource] = get_resource(resource)
 
         self._fulfilled = True
         if self.fulfilled_callback is not None:
@@ -292,8 +295,14 @@ class Resource(object):
         subscription = ResourcePropertySubscription(self, property)
         return subscription
 
-    def hasProperty(self, variable):
-        return variable in self.variables
+    def has_property(self, property):
+        return property in self.variables
+
+    def hasProperty(self, property):
+        """
+        deprecated. use has_property
+        """
+        return self.has_property(property)
 
     @property
     def properties(self):

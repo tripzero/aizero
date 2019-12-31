@@ -543,36 +543,36 @@ class TimeOfUsePolicy(RuntimePolicy):
 class DeviceManager(Resource):
 
     def __init__(self, name="DeviceManager", max_power_budget=0,
-                 power_source="SolarPower", debug=False):
+                 power_source=None, debug=False):
         """ max_power_budget is to be used to define the max power budget when
             there is no solar system (ie battery system, or pure-grid system).
 
             power_source must have the "current_power" property unless max
             power_budget is set.
 
-            solar_power is max_power_budget until solar system updates.
+            available_power is max_power_budget until power_source updates.
         """
 
         super().__init__(name, ["total_power", "running_devices",
                                 "capacity", "total_capacity"])
 
+        if power_source is None:
+            power_sources = ["SolarPower"]
+
+        power_sources = power_source
+
         self.running_devices = []
         self.managed_devices = []
 
         self.max_power_budget = max_power_budget
-        self.solar_power = max_power_budget
         self.time_of_use_mode = None
         self.debug = debug
 
-        def wait_power_source():
-            gr(power_source).subscribe(
-                "current_power", self.solar_power_changed)
+        self.power_sources = None
 
         if not max_power_budget:
-            try:
-                wait_power_source()
-            except ResourceNotFoundException:
-                Resource.waitResource(power_source, wait_power_source)
+            self.power_sources = ResourceRequires(
+                power_sources, lambda rsrcs: True)
 
         def wait_time_of_use():
             gr("TimeOfUse").subscribe("mode", self.time_of_use_changed)
@@ -583,11 +583,6 @@ class DeviceManager(Resource):
             Resource.waitResource("TimeOfUse", wait_time_of_use)
 
         self.poller = resource_poll(self.process_managed_devices, MINS(1))
-
-    def solar_power_changed(self, value):
-        self.solar_power = value
-        self.debug_print_capacity()
-        # self.process_managed_devices()
 
     def time_of_use_changed(self, value):
         self.time_of_use_mode = value
@@ -609,26 +604,44 @@ class DeviceManager(Resource):
         return pigs[np.max(list(pigs.keys()))]
 
     @property
+    def available_power(self):
+
+        if self.power_sources is None:
+            return self.max_power_budget
+
+        ap = 0
+
+        for power_source in self.power_sources.resources():
+            cp = power_source.get_value("current_power")
+
+            if cp is None:
+                continue
+
+            ap += cp
+
+        return ap
+
+    @property
     def capacity(self):
-        return self.solar_power
+        return self.available_power
 
     @property
     def utilization(self):
-        return round(self.running_power / max(self.solar_power, 1) * 100.0, 1)
+        return round(self.running_power / max(self.available_power, 1) * 100.0, 1)
 
     @property
     def remaining_power_capacity(self):
-        return self.solar_power - self.running_power
+        return self.available_power - self.running_power
 
     @property
     def capcity_percentage(self):
         return min(round(self.running_power /
-                         max(self.solar_power, 1) * 100.0, 1), 100)
+                         max(self.available_power, 1) * 100.0, 1), 100)
 
     def debug_print_capacity(self):
         cap_per = self.capcity_percentage
 
-        print("total budget: {}W".format(self.solar_power))
+        print("total budget: {}W".format(self.available_power))
         print("total usage: {}W".format(round(self.running_power), 1))
         print("capacity: {}%".format(
             cap_per))
@@ -788,12 +801,12 @@ class DeviceManager(Resource):
             return _devices_we_can_kick
 
     def overrun_amount(self, device_to_run=None):
-        power_delta = self.running_power - self.solar_power
+        power_delta = self.running_power - self.available_power
 
         # if this device is already "running", it's power is already included
         if device_to_run and not self.is_running(device_to_run):
             power_delta = (self.running_power +
-                           device_to_run.max_power_usage) - self.solar_power
+                           device_to_run.max_power_usage) - self.available_power
 
         if device_to_run:
             return max(0, min(power_delta, device_to_run.max_power_usage))
@@ -1423,6 +1436,28 @@ def test_time_of_use_policy():
     dm.process_managed_devices()
 
     assert device.running()
+
+
+def test_manager_multiple_power_sources():
+
+    Resource.clearResources()
+
+    ps1 = Resource("PowerSource1", ["current_power"])
+    ps2 = Resource("PowerSource2", ["current_power"])
+
+    dm = DeviceManager(power_source=[ps1.name, ps2.name])
+
+    asyncio.get_event_loop().run_until_complete(asyncio.sleep(1))
+
+    ps1.set_value("current_power", 10)
+    ps2.set_value("current_power", 5)
+
+    assert dm.available_power == 15
+
+    ps1.set_value("current_power", 0)
+    ps2.set_value("current_power", 0)
+
+    assert dm.available_power == 0
 
 
 if __name__ == "__main__":
