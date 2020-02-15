@@ -140,6 +140,8 @@ class Ecobee:
 
     @property
     def fan_mode(self):
+        if self.thermostat is None:
+            return None
         return self.thermostat.runtime.desired_fan_mode
 
     @property

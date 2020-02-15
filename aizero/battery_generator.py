@@ -7,7 +7,7 @@ class BatteryGenerator(DeviceResource):
     BatteryGenerator is a special device that generates power.
 
 
-    The device is for power generation only. It is intended to be used
+    This device is for power generation only. It is intended to be used
     as a power source for the DeviceManager.  Charging device is intended
     to be a separate device and managed separately.
     """

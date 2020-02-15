@@ -3,10 +3,12 @@ import asyncio
 from pyHS100 import Discover
 from pyHS100.smartdevice import SmartDeviceException
 from pyHS100.smartstrip import SmartStrip
-
+from pyHS100.protocol import TPLinkSmartHomeProtocol
 from aizero.device_resource import DeviceResource
 from aizero.resource import MINS, has_resource, ResourceNameAlreadyTaken
 from aizero.utils import run_thread
+
+TPLinkSmartHomeProtocol.DEFAULT_TIMEOUT = 1
 
 
 @asyncio.coroutine
@@ -18,25 +20,30 @@ def discover_devices():
 
     for key, device in devices.items():
 
-        if not has_resource(device.alias):
-            if isinstance(device, SmartStrip):
-                for i in range(device.num_children):
+        try:
+            if not has_resource(device.alias):
+                if isinstance(device, SmartStrip):
+                    for i in range(device.num_children):
 
+                        try:
+                            plugs.append(
+                                KasaStripPort(device=device,
+                                              plug_index=i))
+                        except ResourceNameAlreadyTaken:
+                            pass
+
+                else:
                     try:
                         plugs.append(
-                            KasaStripPort(device=device,
-                                          plug_index=i))
+                            KasaPlug(device.alias,
+                                     device_name=device.alias,
+                                     device=device))
                     except ResourceNameAlreadyTaken:
                         pass
-
-            else:
-                try:
-                    plugs.append(
-                        KasaPlug(device.alias,
-                                 device_name=device.alias,
-                                 device=device))
-                except ResourceNameAlreadyTaken:
-                    pass
+        except SmartDeviceException:
+            print("SmartDeviceException with {}".format(
+                device.host))
+            continue
 
     return plugs
 

@@ -557,7 +557,7 @@ class DeviceManager(Resource):
                                 "capacity", "total_capacity"])
 
         if power_source is None:
-            power_sources = ["SolarPower"]
+            power_source = ["SolarPower"]
 
         power_sources = power_source
 
@@ -1458,6 +1458,23 @@ def test_manager_multiple_power_sources():
     ps2.set_value("current_power", 0)
 
     assert dm.available_power == 0
+
+
+def test_manager_default_power_source():
+    Resource.clearResources()
+
+    ps1 = Resource("SolarPower", ["current_power"])
+    ps1.set_value("current_power", 0)
+
+    dm = DeviceManager()
+
+    asyncio.get_event_loop().run_until_complete(asyncio.sleep(1))
+
+    assert dm.available_power == 0
+
+    ps1.set_value("current_power", 1000)
+
+    assert dm.available_power == 1000
 
 
 if __name__ == "__main__":
