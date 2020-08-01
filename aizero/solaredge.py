@@ -15,6 +15,7 @@ class SolarPower(Resource):
     def __init__(self):
         Resource.__init__(self, "SolarPower", [
                           "current_power",
+                          "available_power",
                           "energy_day",
                           "energy_month",
                           "energy_lifetime",
@@ -76,6 +77,7 @@ class SolarPower(Resource):
             self.set_value("energy_month", energy_month)
             self.set_value("energy_day", energy_day)
             self.set_value("current_power", current_power)
+            self.set_value("available_power", current_power)
         except Exception:
             print("solar: error getting overview")
             exc_type, exc_value, exc_traceback = sys.exc_info()

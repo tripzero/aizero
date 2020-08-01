@@ -3,9 +3,13 @@ import asyncio
 import sonoff
 
 from aizero.resource import get_resource as gr
-from aizero.resource import MINS
+from aizero.resource import MINS, HOURS
 from aizero.device_resource import DeviceResource
 from aizero.utils import run_thread
+
+"""
+requires sonoff-python from: https://github.com/lucien2k/sonoff-python
+"""
 
 
 class SonoffDevice(DeviceResource):
@@ -14,20 +18,36 @@ class SonoffDevice(DeviceResource):
 
         super().__init__(name)
 
-        if username is None:
-            username = gr("ConfigurationResource").config["sonoff_username"]
-        if password is None:
-            password = gr("ConfigurationResource").config["sonoff_password"]
-        if region is None:
-            region = gr("ConfigurationResource").config.get(
-                "sonoff_region", "us")
+        self.username = username
+        self.password = password
+        self.region = region
 
-        self.s = sonoff.Sonoff(username, password, region)
-
+        self.update_running = False
         self.device = None
+        self.s = None
 
-        self.get_device()
+        asyncio.get_event_loop().create_task(self.full_login())
 
+    @asyncio.coroutine
+    def full_login(self):
+        while True:
+            if self.username is None:
+                self.username = gr(
+                    "ConfigurationResource").config["sonoff_username"]
+            if self.password is None:
+                self.password = gr(
+                    "ConfigurationResource").config["sonoff_password"]
+            if self.region is None:
+                self.region = gr("ConfigurationResource").config.get(
+                    "sonoff_region", "us")
+
+            self.s = sonoff.Sonoff(self.username, self.password, self.region)
+
+            yield from self.update()
+
+            yield from asyncio.sleep(HOURS(8))
+
+    @asyncio.coroutine
     def get_device(self):
         for device in self.s.get_devices():
             print(f"searching device {device['name']}")
@@ -42,13 +62,30 @@ class SonoffDevice(DeviceResource):
             yield from self.update()
             yield from asyncio.sleep(MINS(3))
 
+    @asyncio.coroutine
     def update(self):
+
+        if self.s is None:
+            return
+
+        if self.update_running:
+            while self.update_running:
+                yield from asyncio.sleep(0.1)
+
+            return
+
+        self.update_running = True
         print("running update")
+
+        yield from run_thread(self.s.do_reconnect)
+        yield from run_thread(self.s.do_login)
         yield from run_thread(self.s.update_devices)
 
-        self.get_device()
+        yield from self.get_device()
 
         is_on = yield from run_thread(self.get_is_on)
+
+        self.set_value("running", is_on)
 
         if is_on and not super().running():
             super().run()
@@ -57,6 +94,7 @@ class SonoffDevice(DeviceResource):
             super().stop()
 
         self._update_power_usage()
+        self.update_running = False
 
     def get_is_on(self):
 
@@ -66,7 +104,7 @@ class SonoffDevice(DeviceResource):
         is_on = self.device['params']['switch']
         is_on = is_on == "on"
 
-        print(f"device is_on {is_on}")
+        print(f"device {self.name} is_on {is_on}")
 
         return is_on
 
@@ -83,8 +121,9 @@ class SonoffDevice(DeviceResource):
 
     @asyncio.coroutine
     def do_set(self, val):
+        yield from self.update()
         yield from run_thread(
-            self.s.switch, val, self.s.device['deviceid'], None)
+            self.s.switch, val, self.device['deviceid'], None)
 
         yield from self.poll()
 
@@ -98,7 +137,7 @@ class SonoffDevice(DeviceResource):
 
     def _update_power_usage(self):
 
-        if "power" not in self.device['params']:
+        if self.device is not None and "power" in self.device['params']:
             consumption = float(self.device['params']['power'])
             self.update_power_usage(consumption)
 
@@ -124,6 +163,21 @@ def main():
 
     print(f"device running? {device.running()}")
     print(f"device running? {device.power_usage}")
+
+    if not device.running():
+        device.run()
+    else:
+        device.stop()
+
+    asyncio.get_event_loop().run_until_complete(asyncio.sleep(10))
+
+    print(f"device running? {device.running()}")
+    print(f"device running? {device.power_usage}")
+
+    if device.running():
+        device.stop()
+    else:
+        device.run()
 
 
 if __name__ == '__main__':

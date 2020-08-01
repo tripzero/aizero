@@ -142,10 +142,10 @@ class RuntimePolicy:
     def to_json(self):
         serialized = {}
         serialized["name"] = self.policy
-        conditions = []
+        conditions = {}
 
         for cond in self.conditions:
-            conditions.append(cond.__name__)
+            conditions[cond.__name__] = cond()
 
         serialized["conditions"] = conditions
 
@@ -212,19 +212,18 @@ class RunIfCanPolicy(RuntimePolicy):
             conditions = []
 
         super().__init__(policy=RuntimePolicies.run_if_can,
-                         conditions=conditions,
-                         or_conditions=or_conditions)
+                         conditions=conditions)
 
         self.conditions.append(self.can_run)
         self.device = None
 
     def process(self, device):
-        if not self.device:
+        if self.device is None:
             self.device = device
 
     def can_run(self):
-
-        return self.device.can_run()
+        if self.device is not None:
+            return self.device.can_run()
 
 
 class DimIfCannotPolicy(RuntimePolicy):
@@ -492,7 +491,6 @@ class MinimumRuntime(RuntimePolicy):
         running = device.running()
 
         if running and self.last_time is None:
-            print("starting current runtime")
             self.last_time = time.monotonic()
             return
 
@@ -501,7 +499,6 @@ class MinimumRuntime(RuntimePolicy):
             self.last_time = time.monotonic()
 
         elif not running and self.last_time is not None:
-            print("stopping current runtime!")
             self.current_runtime += time.monotonic() - self.last_time
             self.last_time = None
 
@@ -537,7 +534,19 @@ class TimeOfUsePolicy(RuntimePolicy):
 
     def can_run(self):
         tou = self.rsrcs("TimeOfUse")
-        return self.time_of_use_mode == tou.get_value("mode")
+        mode = tou.get_value("mode")
+
+        return self.time_of_use_mode == mode
+
+    def to_json(self):
+
+        tou = self.rsrcs("TimeOfUse")
+        mode = tou.get_value("mode")
+
+        serialized = json.loads(super().to_json())
+        serialized["mode"] = mode
+
+        return json.dumps(serialized)
 
 
 class DeviceManager(Resource):
@@ -547,7 +556,7 @@ class DeviceManager(Resource):
         """ max_power_budget is to be used to define the max power budget when
             there is no solar system (ie battery system, or pure-grid system).
 
-            power_source must have the "current_power" property unless max
+            power_source must have the "available_power" property unless max
             power_budget is set.
 
             available_power is max_power_budget until power_source updates.
@@ -559,10 +568,14 @@ class DeviceManager(Resource):
         if power_source is None:
             power_source = ["SolarPower"]
 
+        if isinstance(power_source, str):
+            power_source = [power_source]
+
         power_sources = power_source
 
         self.running_devices = []
         self.managed_devices = []
+        self.ignored_devices = []
 
         self.max_power_budget = max_power_budget
         self.time_of_use_mode = None
@@ -612,7 +625,7 @@ class DeviceManager(Resource):
         ap = 0
 
         for power_source in self.power_sources.resources():
-            cp = power_source.get_value("current_power")
+            cp = power_source.get_value("available_power")
 
             if cp is None:
                 continue
@@ -752,6 +765,8 @@ class DeviceManager(Resource):
         total_power = 0
 
         for dev in self.running_devices:
+            if dev in self.ignored_devices:
+                continue
             total_power += dev.power_usage
 
         return total_power
@@ -893,6 +908,10 @@ class DeviceManager(Resource):
 
         return rdp
 
+    def ignore_power_usage(self, device):
+        if device not in self.ignored_devices:
+            self.ignored_devices.append(device)
+
 
 class DeviceResource(Resource):
 
@@ -978,7 +997,11 @@ class DeviceResource(Resource):
             self.device_manager.register_managed_device(self)
 
     def running(self):
-        return self.device_manager and self.device_manager.is_running(self)
+        running = self.device_manager and self.device_manager.is_running(self)
+
+        self.set_value('running', running)
+
+        return running
 
     @property
     def power_usage(self):
@@ -1442,20 +1465,20 @@ def test_manager_multiple_power_sources():
 
     Resource.clearResources()
 
-    ps1 = Resource("PowerSource1", ["current_power"])
-    ps2 = Resource("PowerSource2", ["current_power"])
+    ps1 = Resource("PowerSource1", ["available_power"])
+    ps2 = Resource("PowerSource2", ["available_power"])
 
     dm = DeviceManager(power_source=[ps1.name, ps2.name])
 
     asyncio.get_event_loop().run_until_complete(asyncio.sleep(1))
 
-    ps1.set_value("current_power", 10)
-    ps2.set_value("current_power", 5)
+    ps1.set_value("available_power", 10)
+    ps2.set_value("available_power", 5)
 
     assert dm.available_power == 15
 
-    ps1.set_value("current_power", 0)
-    ps2.set_value("current_power", 0)
+    ps1.set_value("available_power", 0)
+    ps2.set_value("available_power", 0)
 
     assert dm.available_power == 0
 
@@ -1463,8 +1486,8 @@ def test_manager_multiple_power_sources():
 def test_manager_default_power_source():
     Resource.clearResources()
 
-    ps1 = Resource("SolarPower", ["current_power"])
-    ps1.set_value("current_power", 0)
+    ps1 = Resource("SolarPower", ["available_power"])
+    ps1.set_value("available_power", 0)
 
     dm = DeviceManager()
 
@@ -1472,9 +1495,28 @@ def test_manager_default_power_source():
 
     assert dm.available_power == 0
 
-    ps1.set_value("current_power", 1000)
+    ps1.set_value("available_power", 1000)
 
     assert dm.available_power == 1000
+
+
+def test_ignore_power_usage():
+    Resource.clearResources()
+    dm = DeviceManager()
+
+    fake_device = DeviceResource("fd1", 100)
+    fake_device2 = DeviceResource("fd2", 100)
+
+    fake_device.run()
+    fake_device2.run()
+
+    asyncio.get_event_loop().run_until_complete(asyncio.sleep(1))
+
+    assert dm.running_power == 200
+
+    dm.ignore_power_usage(fake_device2)
+
+    assert dm.running_power == 100
 
 
 if __name__ == "__main__":

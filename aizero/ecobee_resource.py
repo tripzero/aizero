@@ -318,8 +318,11 @@ class Ecobee:
 
         return thermostat
 
-    def get_sensors(self, sensor_name=None,
-                    capability=None, capability_value=None):
+    def get_sensors(self,
+                    sensor_name=None,
+                    capability=None,
+                    capability_value=None,
+                    debug=False):
 
         ret_sensors = []
 
@@ -334,14 +337,16 @@ class Ecobee:
 
             if capability:
                 for sensor_capability in sensor.capability:
-                    # print("searching: {}=={}".format(
-                    #    sensor_capability.type,
-                    #    capability))
+                    if debug:
+                        print("searching: {}=={}".format(
+                            sensor_capability.type,
+                            capability))
                     if sensor_capability.type == capability:
 
-                        # print("checking {}=={}".format(
-                        #    capability_value,
-                        #    sensor_capability.value))
+                        if debug:
+                            print("checking {}=={}".format(
+                                capability_value,
+                                sensor_capability.value))
 
                         if (capability_value and
                                 sensor_capability.value != capability_value):
@@ -352,49 +357,72 @@ class Ecobee:
 
         return ret_sensors
 
-    def get_sensor_value(self, sensor_name, capability):
+    def get_sensor_value(self, sensor_name, capability, debug=False):
         sensors = self.thermostat.remote_sensors
 
         ret_sensors = []
 
         for sensor in sensors:
+            if debug:
+                print(f"searching for sensor {sensor_name} ?= {sensor.name}")
+
             if sensor_name and sensor.name != sensor_name:
                 continue
 
+            if debug:
+                print("found!")
+
             for sensor_capability in sensor.capability:
+                if debug:
+                    print(f"searching for capability {sensor_capability} ?= {capability}")
+
                 if sensor_capability.type == capability:
                     return sensor_capability.value
 
-    def get_sensor_min_max(self, capability_filter=None,
-                           capability_filter_value=None):
+    def get_sensor_min_max(self, min_capability_filter=None,
+                           min_capability_filter_value=None,
+                           max_capability_filter=None,
+                           max_capability_filter_value=None):
 
-        sensors = self.get_sensors(capability=capability_filter,
-                                   capability_value=capability_filter_value)
+        sensors = self.get_sensors(
+            capability=min_capability_filter,
+            capability_value=min_capability_filter_value)
 
         if len(sensors) == 0:
-            print("no sensors found {} == {}".format(
-                capability_filter,
-                capability_filter_value))
+            print("no sensors found matching criteria: {} == {}".format(
+                min_capability_filter,
+                min_capability_filter_value))
             return None, None
 
+        max_sensors = self.get_sensors(
+            capability=max_capability_filter,
+            capability_value=max_capability_filter_value)
+
+        if len(max_sensors) == 0:
+            print("no sensors found matching criteria{} == {}".format(
+                max_capability_filter,
+                max_capability_filter_value))
+            return None, None
+
+        sensors.extend(max_sensors)
+
         sensor_temps = []
+        sensors_with_temp = []
 
         for sensor in sensors:
-            for sensor_capability in sensor.capability:
-                if sensor_capability.type == "temperature":
-                    sensor_temps.append(sensor_capability.value)
+            temperature = self.get_sensor_value(sensor.name,
+                                                "temperature",
+                                                debug=True)
+            if temperature is not None:
+                sensor_temps.append(temperature)
+                sensors_with_temp.append(sensor)
 
-        smin = np.min(np.array(sensor_temps).astype(np.int))
-        smax = np.max(np.array(sensor_temps).astype(np.int))
+        tmin = np.min(np.array(sensor_temps).astype(np.int))
+        tmax = np.max(np.array(sensor_temps).astype(np.int))
 
-        print("min: {}, max: {}".format(smin, smax))
+        print(f"get_sensor_min_max: {tmin}, {tmax}")
 
-        smin = self.get_sensors(
-            capability="temperature", capability_value=str(smin))[0]
-        smax = self.get_sensors(
-            capability="temperature", capability_value=str(smax))[0]
-
-        return smin, smax
+        return tmin, tmax
 
     def get_occupancy(self, sensor_name=None):
         sensors = self.thermostat.remote_sensors
@@ -433,8 +461,8 @@ class Ecobee:
             response = self.service.refresh_tokens()
 
             self.persist_to_shelf()
-        except:
-            print("Ecobee: refresh token exception")
+        except Exception as ex:
+            print(f"Ecobee: refresh token exception: {ex}")
 
     def persist_to_shelf(self):
         pyecobee_db = shelve.open(self.db_file, protocol=2)
@@ -617,23 +645,17 @@ class EcobeeResource(DeviceResource):
         is_night_time = self.night_time_resource.getValue("night_time")
         can_run = self.can_run()
 
-        max_room_temp_delta = 10
+        max_room_temp_delta = 40
 
-        sensor_min, sensor_max = yield from run_thread(
+        temp_min, temp_max = yield from run_thread(
             self.ecobee_service.get_sensor_min_max,
-            "occupancy", "true")
+            max_capability_filter="occupancy",
+            max_capability_filter_value="true")
 
-        if sensor_min is not None:
-            temp_max = yield from run_thread(
-                self.ecobee_service.get_sensor_value,
-                sensor_max, "temperature")
-            temp_min = yield from run_thread(
-                self.ecobee_service.get_sensor_value,
-                sensor_min, "temperature")
-
-            print("min: {} max: {}".format(temp_min, temp_max))
+        print("min: {} max: {}".format(temp_min, temp_max))
 
         print("max temp delta: {}".format(max_room_temp_delta))
+        print(f"current delta: {temp_max - temp_min}")
         print("current_program: {}".format(current_program))
         print("occupancy: {}".format(self.ecobee_service.global_occupancy))
         print("occupancy prediction: {}".format(self.occupancy_prediction))

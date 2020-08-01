@@ -39,7 +39,7 @@ def get_resource(resource_name, class_=None, **kwargs):
         if class_ is not None:
             return class_(**kwargs)
 
-    raise ResourceNotFoundException()
+    raise ResourceNotFoundException(resource_name)
 
 
 def has_resource(rsrc_name):
@@ -362,7 +362,7 @@ class Resource(object):
         :param: property name of property
         """
         if property not in self.variables:
-            property("{} not available".format(property))
+            print("{} not available in {}".format(property, self.name))
             print("available properties: {}".format(self.variables.keys()))
             raise PropertyDoesNotExistException(
                 "Invalid property: {}".format(property))
@@ -373,6 +373,14 @@ class Resource(object):
 
         if other_property is None:
             other_property = property
+
+        if not self.has_property(property):
+            raise ResourceNotFoundException(
+                f"{self.name} has no property {property}")
+
+        if not other_resource.has_property(other_property):
+            raise ResourceNotFoundException(
+                f"{other_resource.name} has no property {other_property}")
 
         self.subscribe(
             property,
@@ -659,6 +667,27 @@ def test_bind_to():
     a1.set_value("a", 456)
 
     assert a2.get_value("z") == 456
+
+
+def test_bind_from():
+    import uuid
+
+    a1 = Resource(uuid.uuid4().hex, variables=['a', 'b', 'z'])
+    a2 = Resource(uuid.uuid4().hex, variables=['a', 'b', 'z'])
+
+    a1.bind_from("a", a2)
+
+    a2.set_value("a", 123)
+
+    assert a1.get_value("a") == 123
+
+    a1.bind_from("a", a2, "z")
+
+    assert a1.get_value("z") == 123
+
+    a2.set_value("a", 456)
+
+    assert a1.get_value("z") == 456
 
 
 def main():
