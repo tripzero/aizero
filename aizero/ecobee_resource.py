@@ -412,7 +412,7 @@ class Ecobee:
         for sensor in sensors:
             temperature = self.get_sensor_value(sensor.name,
                                                 "temperature",
-                                                debug=True)
+                                                debug=False)
             if temperature is not None:
                 sensor_temps.append(temperature)
                 sensors_with_temp.append(sensor)
