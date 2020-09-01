@@ -121,9 +121,9 @@ class KasaPlug(DeviceResource):
             return
 
         if val:
-            asyncio.run(self.device.turn_on())
+            asyncio.get_event_loop().create_task(self.device.turn_on())
         else:
-            asyncio.run(self.device.turn_off())
+            asyncio.get_event_loop().create_task(self.device.turn_off())
 
     def get_is_on(self):
         return self.device.is_on

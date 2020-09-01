@@ -885,6 +885,9 @@ class DeviceManager(Resource):
     def finished_running(self, device):
         if device in self.running_devices:
             self.running_devices.remove(device)
+        else:
+            # Devices was either already stopped or never started
+            return
 
         self.setValue("running_devices", self.running_devices_pretty)
         self.setValue("total_power", self.running_power)
