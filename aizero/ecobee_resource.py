@@ -202,9 +202,7 @@ class Ecobee:
         response = self.service.update_thermostats(
             ecobee.Selection(selection_type=reg_val,
                              selection_match=''),
-            functions=[ecobee.Function(
-                type="setHold",
-                params=params)])
+            functions=[ecobee.Function("setHold", params)])
 
         if response.status.code != 0:
             raise Exception('Failure while executing set_hold:\n{0}'.format(

@@ -191,9 +191,12 @@ class PoeResource(DeviceResource):
 def get_switch_devices(address, num_ports=8):
     devs = []
     for i in range(num_ports):
-        dev = PoeResource(
-            address, i, name="poe_port_{}_{}".format(i, address))
-        devs.append(dev)
+        try:
+            dev = PoeResource(
+                address, i, name="poe_port_{}_{}".format(i, address))
+            devs.append(dev)
+        except:
+            print("Failed go get any poe switch devices")
 
     return devs
 
