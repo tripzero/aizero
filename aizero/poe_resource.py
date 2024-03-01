@@ -150,10 +150,12 @@ class FSTelnetSwitchProtocol:
 class PoeResource(DeviceResource):
 
     def __init__(self, address, port, **kwargs):
-        super().__init__(**kwargs)
-
+        
         self.switch = FSTelnetSwitchProtocol.instance(address)
         self.port = port
+
+        super().__init__(**kwargs)
+
 
     def run(self):
 
@@ -173,6 +175,9 @@ class PoeResource(DeviceResource):
     def poll(self):
 
         while True:
+            if self.switch is None:
+                return
+
             power = self.switch.power_usage(self.port)
             if power is not None:
                 self.update_power_usage(power)

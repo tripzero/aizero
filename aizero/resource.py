@@ -72,6 +72,10 @@ class ResourceRequires:
     def __init__(self, required_resources, fulfilled_callback=None):
 
         self._resources = {}
+
+        if isinstance(required_resources, str):
+            required_resources = [required_resources]
+
         self.required_resources = required_resources
         self.fulfilled_callback = fulfilled_callback
 
@@ -419,7 +423,9 @@ class Resource(object):
 
         df = pd.DataFrame(vars, index=ts)
 
-        self.data_frame = self.data_frame.append(df)
+        # depricated:
+        # self.data_frame = self.data_frame.append(df)
+        self.data_frame = pd.concat([self.data_frame, df])
 
         if "timestamp" in self.data_frame.columns:
             self.data_frame = self.data_frame.set_index("timestamp")

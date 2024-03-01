@@ -8,10 +8,9 @@ from aizero.device_resource import DeviceResource
 from aizero.resource import MINS, has_resource, ResourceNameAlreadyTaken
 
 
-@asyncio.coroutine
-def discover_devices():
+async def discover_devices():
 
-    devices = yield from Discover.discover()
+    devices = await Discover.discover()
 
     plugs = []
 
@@ -20,6 +19,9 @@ def discover_devices():
         try:
             if not has_resource(device.alias):
                 if isinstance(device, SmartStrip):
+                    await device.update()
+                    # print("We has a smart strip!")
+                    # print(f"with {len(device.children)} plugs.")
                     for strip_child in device.children:
                         try:
                             plug = KasaPlug(strip_child.alias,
@@ -53,8 +55,7 @@ def get_kasa_device(alias, devices):
             return device
 
 
-@asyncio.coroutine
-def get_kasa_plug(alias):
+async def get_kasa_plug(alias):
     devices = Discover.discover()
 
     for key, device in devices.items():
@@ -100,13 +101,13 @@ class KasaPlug(DeviceResource):
             self.has_emeter = self.device.has_emeter
             self.is_dimmable = self.device.is_dimmable
 
-    @asyncio.coroutine
-    def do_get_kasa_plug(self):
+    
+    async def do_get_kasa_plug(self):
         self.device = None
 
         while not self.device:
-            self.device = yield from get_kasa_plug(self.device_name)
-            yield from asyncio.sleep(MINS(1))
+            self.device = await get_kasa_plug(self.device_name)
+            await asyncio.sleep(MINS(1))
 
         self.has_emeter = self.device.has_emeter
         self.is_dimmable = self.device.is_dimmable
@@ -128,15 +129,19 @@ class KasaPlug(DeviceResource):
     def get_is_on(self):
         return self.device.is_on
 
-    @asyncio.coroutine
-    def update(self):
+    async def update(self):
         if not self.device:
             return
 
-        if self.parent is not None:
-            yield from self.parent.update()
-        else:
-            yield from self.device.update()
+        try:
+
+            if self.parent is not None:
+                await self.parent.update()
+            else:
+                await self.device.update()
+        except SmartDeviceException as sde:
+            print(f"Kasa Device ({self.device_name}) failure: {sde}")
+            return
 
         is_on = self.get_is_on()
 
@@ -146,13 +151,12 @@ class KasaPlug(DeviceResource):
         elif not is_on and super().running():
             super().stop()
 
-        yield from self._update_power_usage()
+        await self._update_power_usage()
 
-    @asyncio.coroutine
-    def _update_power_usage(self):
+    async def _update_power_usage(self):
 
         if self.has_emeter:
-            consumption = yield from self.device.current_consumption()
+            consumption = await self.device.current_consumption()
             self.update_power_usage(consumption)
 
     def run(self):
@@ -178,17 +182,16 @@ class KasaPlug(DeviceResource):
         except SmartDeviceException:
             pass
 
-    @asyncio.coroutine
-    def process(self):
+    async def process(self):
         while True:
             try:
-                yield from self.update()
+                await self.update()
 
             except SmartDeviceException as ex:
                 print("KasaPlug error ({}). trying to reconnect".format(
                     self.name))
                 print(ex)
-                yield from self.do_get_kasa_plug()
+                await self.do_get_kasa_plug()
             except Exception:
                 print("error in kasa_resource process()")
                 import sys
@@ -198,7 +201,7 @@ class KasaPlug(DeviceResource):
                 traceback.print_exception(exc_type, exc_value, exc_traceback,
                                           limit=12, file=sys.stdout)
 
-            yield from asyncio.sleep(MINS(1))
+            await asyncio.sleep(MINS(1))
 
 
 def test_power_usage_setter():
@@ -219,8 +222,7 @@ def main():
     for plug in plugs:
         print("found: {}".format(plug.name))
 
-    @asyncio.coroutine
-    def do_stuff(plugs):
+    async def do_stuff(plugs):
 
         while True:
             print("number of plugs: {}".format(len(plugs)))
@@ -235,7 +237,7 @@ def main():
                 except Exception:
                     pass
 
-            yield from asyncio.sleep(MINS(1))
+            await asyncio.sleep(MINS(1))
 
     loop.run_until_complete(do_stuff(plugs))
 

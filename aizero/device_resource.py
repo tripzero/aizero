@@ -77,7 +77,7 @@ class RuntimePolicy:
     """
         accepts a policy and a set of conditions.  conditions are a list of
         callables that return either True or False.  If all the conditions are
-        True, run() will be called on the device.  A conditionthat returns
+        True, run() will be called on the device.  A condition that returns
         False will trigger the stop() call on the device.
 
         A condition can return None, which indicates no action.
@@ -415,7 +415,7 @@ class LinkDevicePolicy(RuntimePolicy):
 class RunIfTemperaturePolicy(RuntimePolicy):
 
     def __init__(self, sensor_name, set_point, conditions=None,
-                 or_conditions=None):
+                 or_conditions=None, trigger_on_greater=True):
         if conditions is None:
             conditions = []
 
@@ -426,6 +426,7 @@ class RunIfTemperaturePolicy(RuntimePolicy):
         self.set_point = set_point
         self.temperature = None
         self.sensor_name = sensor_name
+        self.trigger_on_greater = trigger_on_greater
 
         def wait_resource(gr):
             self.temperature = gr(sensor_name).subscribe2("temperature")
@@ -438,9 +439,25 @@ class RunIfTemperaturePolicy(RuntimePolicy):
     def can_run(self):
 
         if self.temperature is not None:
-            # print("sensor_name={}".format(self.sensor_name))
-            # print("temperature={}".format(self.temperature.value))
-            return self.temperature.value > self.set_point
+
+            temperature = self.temperature.value
+
+            if temperature is None:
+                return
+
+            print("sensor_name={}".format(self.sensor_name))
+            print("temperature={}".format(temperature))
+            print("set_point={}".format(self.set_point))
+            
+            if self.trigger_on_greater:
+                run = temperature > self.set_point
+            else:
+                run = temperature < self.set_point
+
+            print(f"RunIfTemperaturePolicy(): can_run: {run}")
+
+            return run
+
         else:
             print("temperature is None. This is probably a bug")
 
@@ -455,6 +472,11 @@ class RunIfTemperaturePolicy(RuntimePolicy):
         serialized["setpoint"] = self.set_point
 
         return json.dumps(serialized)
+
+
+class RunIfTemperatureLessPolicy(RunIfTemperaturePolicy):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, trigger_on_greater=False, **kwargs)
 
 
 class MinimumRuntime(RuntimePolicy):
@@ -602,8 +624,9 @@ class DeviceManager(Resource):
         # self.process_managed_devices()
 
     def register_managed_device(self, device):
-        self.debug_print("registering managed device: {}".format(device.name))
-        if device not in self.managed_devices:
+
+        if device not in self.managed_devices and device.name not in self.power_sources.resources():
+            self.debug_print("registering managed device: {}".format(device.name))
             self.managed_devices.append(device)
             device.subscribe("power_usage", self.device_power_usage_changed)
 
@@ -625,7 +648,14 @@ class DeviceManager(Resource):
         ap = 0
 
         for power_source in self.power_sources.resources():
-            cp = power_source.get_value("available_power")
+            cp = None
+
+            if power_source.has_property("available_power"):
+                cp = power_source.get_value("available_power")
+
+            # We can use DeviceResource as a power source
+            if power_source.has_property("power_usage"):
+                cp = power_source.get_value("power_usage")
 
             if cp is None:
                 continue

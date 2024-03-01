@@ -32,17 +32,3 @@ class RemoteRestResource(Resource):
                 exc_type, exc_value, exc_traceback, limit=7, file=sys.stdout)
 
 
-if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--debug', dest="debug",
-                        help="turn on debugging.", action='store_true')
-    parser.add_argument('address', help="address of server",
-                        nargs="?", default="127.0.0.1")
-    parser.add_argument('port', help="port of server", nargs="?", default=9003)
-    args = parser.parse_args()
-
-    client = RemoteRestResource("Greenhouse", Hammock(
-        "https://tripzero.reesfamily12.com:8069/DeviceManager/DeviceManager"))
-
-    print("client variables: {}".format(client.variables))
