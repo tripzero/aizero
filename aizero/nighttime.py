@@ -7,7 +7,7 @@ from aizero.resource import get_resource
 from aizero.resource_py3 import Py3Resource as resource_poll
 
 from datetime import datetime, time
-from astral import Location
+from astral.location import Location
 
 
 class NightTime(Resource):

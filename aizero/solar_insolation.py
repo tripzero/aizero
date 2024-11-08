@@ -55,8 +55,7 @@ class SolarInsolation(Resource):
     def get_solar_radiation(self, date):
         return get_solar_radiation(self.lat, self.lon, date)
 
-    @asyncio.coroutine
-    def poll(self):
+    async def poll(self):
         while True:
             try:
                 t = get_current_datetime(utc=True)
@@ -66,7 +65,7 @@ class SolarInsolation(Resource):
             except Exception as ex:
                 print("error getting solar insolation: {}".format(ex))
 
-            yield from asyncio.sleep(MINS(3))
+            await asyncio.sleep(MINS(3))
 
 
 if __name__ == "__main__":

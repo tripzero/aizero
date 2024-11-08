@@ -10,8 +10,7 @@ from aizero.resource import Resource, ResourceNotFoundException
 from aizero.mqtt_resource import MqttResource, mqtt_topic_converter
 
 
-@asyncio.coroutine
-def publish_time():
+async def publish_time():
     sys_time_resource = Resource("Date", ["datetime", "datetime_utc"])
 
     while True:
@@ -29,7 +28,7 @@ def publish_time():
 
         sys_time_resource.setValue("datetime_utc", time_str)
 
-        yield from asyncio.sleep(60)
+        await asyncio.sleep(60)
 
 
 @mqtt_topic_converter("Date/datetime")

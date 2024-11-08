@@ -67,10 +67,9 @@ class SolarPower(Resource):
                 energy_day,
                 current_power)
 
-    @asyncio.coroutine
-    def poll_func(self):
+    async def poll_func(self):
         try:
-            energy_lifetime, energy_year, energy_month, energy_day, current_power = yield from run_thread(
+            energy_lifetime, energy_year, energy_month, energy_day, current_power = await run_thread(
                 self._get_overview)
             self.set_value("energy_lifetime", energy_lifetime)
             self.set_value("energy_year", energy_year)

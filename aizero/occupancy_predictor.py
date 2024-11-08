@@ -64,10 +64,9 @@ class OccupancyPredictorResource(DeviceResource):
 
         asyncio.get_event_loop().create_task(self.reset_train_counter())
 
-    @asyncio.coroutine
-    def reset_train_counter(self):
+    async def reset_train_counter(self):
         while True:
-            yield from asyncio.sleep(HOURS(12))
+            await asyncio.sleep(HOURS(12))
 
             self.did_train = False
 
@@ -107,12 +106,11 @@ class OccupancyPredictorResource(DeviceResource):
             lambda: self.wait_can_run(interval=MINS(5)),
             HOURS(1))
 
-    @asyncio.coroutine
-    def train(self, and_test=True):
+    async def train(self, and_test=True):
         if self.predictors is None:
             return
 
-        yield from run_thread(self.predictors.train, and_test=and_test,
+        await run_thread(self.predictors.train, and_test=and_test,
                               convert_func=lstm_convert_dataset)
 
         self.stop()

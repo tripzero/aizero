@@ -6,7 +6,7 @@ from tensorflow import keras
 import numpy as np
 
 from tensorflow.keras.models import model_from_json
-from tensorflow.compat.v1.keras.backend import set_session
+# from tensorflow.compat.v1.keras.backend import set_session
 
 import os
 from aizero import ResourceNotFoundException

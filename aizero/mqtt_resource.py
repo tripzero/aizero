@@ -64,13 +64,12 @@ class MqttCommon:
         asyncio.get_event_loop().create_task(self.do_connect(broker))
         asyncio.get_event_loop().create_task(self._ping_loop())
 
-    @asyncio.coroutine
-    def do_connect(self, broker=None):
+    async def do_connect(self, broker=None):
         if broker is None:
             broker = self.broker
         try:
-            yield from self.client.connect(broker, keepalive=5,
-                                           version=self.mqtt_protocol_version)
+            await self.client.connect(broker, keepalive=5,
+                                      version=self.mqtt_protocol_version)
         except MQTTConnectError as ex:
             print("MqttCommon({}) do_connect failed!".format(self.name))
             print(ex.message)
@@ -83,20 +82,18 @@ class MqttCommon:
         self.connected = False
         print("MqttCommon({}) disconnected".format(self.name))
 
-    @asyncio.coroutine
-    def wait_until_connected(self):
+    async def wait_until_connected(self):
         while not self.connected:
-            yield from asyncio.sleep(0.1)
+            await asyncio.sleep(0.1)
 
-    @asyncio.coroutine
-    def _ping_loop(self):
+    async def _ping_loop(self):
         while True:
-            yield from asyncio.sleep(MINS(3))
+            await asyncio.sleep(MINS(3))
             var = "{}/keep_alive".format(self.name)
             try:
                 self.client.publish(var, "1")
             except AttributeError:
-                yield from self.do_connect(self.broker)
+                await self.do_connect(self.broker)
 
     def on_message(self, client, topic, payload, qos, properties):
         print("on_message({}: {}) please override me in subclass.".format(
@@ -276,9 +273,8 @@ class MqttWrapper(MqttCommon):
             if value is not None:
                 self.publish(variable, value)
 
-    @asyncio.coroutine
-    def do_async_publish(self, *args, **kwargs):
-        yield from self.wait_until_connected()
+    async def do_async_publish(self, *args, **kwargs):
+        await self.wait_until_connected()
 
         self.client.publish(*args, **kwargs)
 

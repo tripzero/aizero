@@ -171,8 +171,7 @@ class PoeResource(DeviceResource):
 
         self.switch.disable(self.port)
 
-    @asyncio.coroutine
-    def poll(self):
+    async def poll(self):
 
         while True:
             if self.switch is None:
@@ -190,7 +189,7 @@ class PoeResource(DeviceResource):
             else:
                 super().stop()
 
-            yield from asyncio.sleep(MINS(3))
+            await asyncio.sleep(MINS(3))
 
 
 def get_switch_devices(address, num_ports=8):

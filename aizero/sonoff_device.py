@@ -28,8 +28,7 @@ class SonoffDevice(DeviceResource):
 
         asyncio.get_event_loop().create_task(self.full_login())
 
-    @asyncio.coroutine
-    def full_login(self):
+    async def full_login(self):
         while True:
             if self.username is None:
                 self.username = gr(
@@ -43,47 +42,44 @@ class SonoffDevice(DeviceResource):
 
             self.s = sonoff.Sonoff(self.username, self.password, self.region)
 
-            yield from self.update()
+            await self.update()
 
-            yield from asyncio.sleep(HOURS(8))
+            await asyncio.sleep(HOURS(8))
 
-    @asyncio.coroutine
-    def get_device(self):
+    async def get_device(self):
         for device in self.s.get_devices():
             print(f"searching device {device['name']}")
             if device['name'] == self.name:
                 print(f"found device {self.name}")
                 self.device = device
 
-    @asyncio.coroutine
-    def poll(self):
+    async def poll(self):
 
         while True:
-            yield from self.update()
-            yield from asyncio.sleep(MINS(3))
+            await self.update()
+            await asyncio.sleep(MINS(3))
 
-    @asyncio.coroutine
-    def update(self):
+    async def update(self):
 
         if self.s is None:
             return
 
         if self.update_running:
             while self.update_running:
-                yield from asyncio.sleep(0.1)
+                await asyncio.sleep(0.1)
 
             return
 
         self.update_running = True
         print("running update")
 
-        yield from run_thread(self.s.do_reconnect)
-        yield from run_thread(self.s.do_login)
-        yield from run_thread(self.s.update_devices)
+        await run_thread(self.s.do_reconnect)
+        await run_thread(self.s.do_login)
+        await run_thread(self.s.update_devices)
 
-        yield from self.get_device()
+        await self.get_device()
 
-        is_on = yield from run_thread(self.get_is_on)
+        is_on = await run_thread(self.get_is_on)
 
         self.set_value("running", is_on)
 
@@ -119,13 +115,12 @@ class SonoffDevice(DeviceResource):
 
         asyncio.get_event_loop().create_task(self.do_set(val))
 
-    @asyncio.coroutine
-    def do_set(self, val):
-        yield from self.update()
-        yield from run_thread(
+    async def do_set(self, val):
+        await self.update()
+        await run_thread(
             self.s.switch, val, self.device['deviceid'], None)
 
-        yield from self.poll()
+        await self.poll()
 
     def run(self):
         self.set(True)

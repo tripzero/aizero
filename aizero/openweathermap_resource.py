@@ -108,14 +108,13 @@ class WeatherResource(Resource):
         fc_standard["forecast_cloud_cover"] = fc['clouds']['all']
         fc_standard['forecast_conditions'] = fc["weather"][0]["main"]
 
-    @asyncio.coroutine
-    def poll_func(self):
+    async def poll_func(self):
 
         try:
-            current_observation = yield from run_thread(weatherConditions,
-                                                        self.key,
-                                                        self.lat,
-                                                        self.lon)
+            current_observation = await run_thread(weatherConditions,
+                                                   self.key,
+                                                   self.lat,
+                                                   self.lon)
             if current_observation:
                 self.setValue(
                     "temperature", current_observation["temperature"])
@@ -124,8 +123,8 @@ class WeatherResource(Resource):
                 self.set_value("cloud_cover",
                                current_observation["cloud_cover"])
 
-            tomorrow = yield from run_thread(forecast, self.key,
-                                             self.lat, self.lon)
+            tomorrow = await run_thread(forecast, self.key,
+                                        self.lat, self.lon)
 
             if tomorrow is not None:
                 self.setValue("forecast_high", tomorrow["main"]["temp_max"])

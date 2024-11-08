@@ -7,6 +7,7 @@ import sys
 import traceback
 
 from datetime import datetime, timezone
+from fuzzywuzzy import fuzz
 
 if sys.version_info >= (3, 0):
     import asyncio
@@ -42,8 +43,37 @@ def get_resource(resource_name, class_=None, **kwargs):
     raise ResourceNotFoundException(resource_name)
 
 
+def find_resource(resource_name, threshold=70):
+    name = resource_name.lower()
+    rsrcs = []
+    scores = []
+
+    for r in Resource.resources:
+
+        score = fuzz.token_sort_ratio(
+            resource_name, r.name)
+        
+        if score > threshold:
+            # print(f"found {r.name}, {score}")
+            rsrcs.append(r)
+            scores.append(score)
+
+    if len(rsrcs):
+        rsrc = rsrcs[np.argmax(scores)]
+        return rsrc
+
+
+async def wait_for_resource(resource_name):
+    while not has_resource(resource_name):
+        await asyncio.sleep(1)
+
+    return get_resource(resource_name)
+
+
 def has_resource(rsrc_name):
-    return rsrc_name in Resource.getResourcesNames()
+    found = rsrc_name in Resource.getResourcesNames()
+
+    return found
 
 
 def to_timestamp(dt):
@@ -465,8 +495,7 @@ class Resource(object):
 
         return self.data_frame
 
-    @asyncio.coroutine
-    def poll(self):
+    async def poll(self):
         return True
 
     def to_json(self):

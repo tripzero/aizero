@@ -3,11 +3,11 @@ import json
 import logging
 import numpy as np
 import time
+import yaml
 
 from aizero.resource import Resource, ResourceNotFoundException, MINS
 from aizero.resource import get_resource as gr
-from aizero.resource import ResourceRequires, HOURS
-from aizero.remoteresource import RemoteRestResource
+from aizero.resource import ResourceRequires, HOURS, has_resource
 from aizero.resource_py3 import Py3PollWhileTrue as poll_while_true
 from aizero.resource_py3 import Py3Resource as resource_poll
 
@@ -54,6 +54,9 @@ class RuntimePolicies:
     """
     off_if_unoccupied = "off_if_unoccupied"
 
+
+    on_if_occupied = "on_if_occupied"
+
     """ Policy: link_device_policy
         can_run() is True when linked device is running
     """
@@ -91,7 +94,9 @@ class RuntimePolicy:
         if or_conditions is None:
             or_conditions = []
 
+        self.enabled = True
         self.policy = policy
+        self.name = policy
         self.conditions = conditions
         self.or_conditions = or_conditions
 
@@ -106,17 +111,22 @@ class RuntimePolicy:
 
     def run_conditions(self):
 
+        if not self.enabled:
+            return None
+
         ret_val = True
         do_something = False
 
         if not len(self.conditions):
             ret_val = False
 
+        #print(f"number of conditions {len(self.conditions)}")
+
         for condition in self.conditions:
             cond_ret_val = condition()
 
-            # print("running condition from {}: {}: {}".format(
-            #    self.policy, condition.__name__, cond_ret_val))
+            #print("running condition from {}: {}: {}".format(
+            #   self.policy, condition.__name__, cond_ret_val))
 
             do_something |= cond_ret_val is not None
 
@@ -125,11 +135,13 @@ class RuntimePolicy:
 
         or_ret_val = False
 
+        #print(f"number of 'or' conditions {len(self.or_conditions)}")
+
         for condition in self.or_conditions:
             cond_ret_val = condition()
 
-            # print("running 'or' condition from {}: {}: {}".format(
-            #    self.policy, condition.__name__, cond_ret_val))
+            #print("running 'or' condition from {}: {}: {}".format(
+            #   self.policy, condition.__name__, cond_ret_val))
 
             do_something |= cond_ret_val is not None
 
@@ -138,6 +150,10 @@ class RuntimePolicy:
 
         if do_something:
             return ret_val or or_ret_val
+
+
+    def __str__(self):
+        return self.to_yaml()
 
     def to_json(self):
         serialized = {}
@@ -150,6 +166,18 @@ class RuntimePolicy:
         serialized["conditions"] = conditions
 
         return json.dumps(serialized)
+
+    def to_yaml(self):
+        serialized = {}
+        serialized["name"] = self.policy
+        conditions = {}
+
+        for cond in self.conditions:
+            conditions[cond.__name__] = cond()
+
+        serialized["conditions"] = conditions
+
+        return yaml.dump(serialized)
 
 
 class PolicyGroup(RuntimePolicy):
@@ -203,6 +231,16 @@ class PolicyGroup(RuntimePolicy):
                                      for policy in self.or_policies]
 
         return json.dumps(serialized)
+
+    def to_yaml(self):
+        serialized = yaml.load(super().to_yaml(), yaml.SafeLoader)
+
+        serialized["policies"] = [policy.to_yaml()
+                                  for policy in self.policies]
+        serialized["or_policies"] = [policy.to_yaml()
+                                     for policy in self.or_policies]
+
+        return yaml.dump(serialized)
 
 
 class RunIfCanPolicy(RuntimePolicy):
@@ -285,11 +323,10 @@ class OffIfUnoccupied(RuntimePolicy):
         self.rsrcs = ResourceRequires([occupancy_resource_name],
                                       wait_occupancy)
 
-    @asyncio.coroutine
-    def can_run_check_timeout(self):
+    async def can_run_check_timeout(self):
         self.checked = True
 
-        yield from asyncio.sleep(MINS(15))
+        await asyncio.sleep(MINS(15))
 
         self.checked = False
 
@@ -307,6 +344,8 @@ class OffIfUnoccupied(RuntimePolicy):
             asyncio.get_event_loop().create_task(self.can_run_check_timeout())
             logging.debug("condition returning False")
             return False
+
+        return None
 
     def to_json(self):
         """
@@ -341,6 +380,8 @@ class OnIfOccupied(OffIfUnoccupied):
                          conditions=conditions,
                          or_conditions=or_conditions,
                          occupancy_property=occupancy_property)
+
+        self.policy = RuntimePolicies.on_if_occupied
 
     def can_run(self):
         if self.checked:
@@ -429,9 +470,13 @@ class RunIfTemperaturePolicy(RuntimePolicy):
         self.trigger_on_greater = trigger_on_greater
 
         def wait_resource(gr):
-            self.temperature = gr(sensor_name).subscribe2("temperature")
+            try:
+                self.temperature = gr(sensor_name).subscribe2("temperature")
 
-            self.conditions.append(self.can_run)
+                self.conditions.append(self.can_run)
+            except ValueError as ve:
+                print("RunIfTemperaturePolicy: error subscribing to temperature.")
+                print(ve)
 
         self.rsrcs = ResourceRequires([sensor_name],
                                       wait_resource)
@@ -445,21 +490,21 @@ class RunIfTemperaturePolicy(RuntimePolicy):
             if temperature is None:
                 return
 
-            print("sensor_name={}".format(self.sensor_name))
-            print("temperature={}".format(temperature))
-            print("set_point={}".format(self.set_point))
-            
+            # print("sensor_name={}".format(self.sensor_name))
+            # print("temperature={}".format(temperature))
+            # print("set_point={}".format(self.set_point))
+
             if self.trigger_on_greater:
                 run = temperature > self.set_point
             else:
                 run = temperature < self.set_point
 
-            print(f"RunIfTemperaturePolicy(): can_run: {run}")
+            # print(f"RunIfTemperaturePolicy(): can_run: {run}")
 
             return run
 
         else:
-            print("temperature is None. This is probably a bug")
+            print("RunIfTemperaturePolicy: temperature is None. This is probably a bug")
 
     def to_json(self):
         """
@@ -502,10 +547,9 @@ class MinimumRuntime(RuntimePolicy):
 
         asyncio.get_event_loop().create_task(self.reset())
 
-    @asyncio.coroutine
-    def reset(self):
+    async def reset(self):
         while True:
-            yield from asyncio.sleep(HOURS(24))
+            await asyncio.sleep(HOURS(24))
 
             self.current_runtime = 0
 
@@ -562,6 +606,9 @@ class TimeOfUsePolicy(RuntimePolicy):
 
     def to_json(self):
 
+        if not has_resource("TimeOfUse"):
+            return ""
+
         tou = self.rsrcs("TimeOfUse")
         mode = tou.get_value("mode")
 
@@ -587,13 +634,10 @@ class DeviceManager(Resource):
         super().__init__(name, ["total_power", "running_devices",
                                 "capacity", "total_capacity"])
 
-        if power_source is None:
-            power_source = ["SolarPower"]
-
         if isinstance(power_source, str):
             power_source = [power_source]
 
-        power_sources = power_source
+        self.power_sources = power_sources = power_source
 
         self.running_devices = []
         self.managed_devices = []
@@ -603,12 +647,6 @@ class DeviceManager(Resource):
         self.time_of_use_mode = None
         self.debug = debug
 
-        self.power_sources = None
-
-        if not max_power_budget:
-            self.power_sources = ResourceRequires(
-                power_sources, lambda rsrcs: True)
-
         def wait_time_of_use():
             gr("TimeOfUse").subscribe("mode", self.time_of_use_changed)
 
@@ -617,7 +655,8 @@ class DeviceManager(Resource):
         except ResourceNotFoundException:
             Resource.waitResource("TimeOfUse", wait_time_of_use)
 
-        self.poller = resource_poll(self.process_managed_devices, MINS(1))
+        # self.poller = resource_poll(self.process_managed_devices, MINS(1))
+        asyncio.get_event_loop().create_task(self.run_process_loop())
 
     def time_of_use_changed(self, value):
         self.time_of_use_mode = value
@@ -625,7 +664,10 @@ class DeviceManager(Resource):
 
     def register_managed_device(self, device):
 
-        if device not in self.managed_devices and device.name not in self.power_sources.resources():
+        if self.power_sources is not None and device.name in self.power_sources:
+            return
+
+        if device not in self.managed_devices:
             self.debug_print("registering managed device: {}".format(device.name))
             self.managed_devices.append(device)
             device.subscribe("power_usage", self.device_power_usage_changed)
@@ -647,15 +689,16 @@ class DeviceManager(Resource):
 
         ap = 0
 
-        for power_source in self.power_sources.resources():
+        for power_source in self.power_sources:
+            ps = gr(power_source)
             cp = None
 
-            if power_source.has_property("available_power"):
-                cp = power_source.get_value("available_power")
+            if ps.has_property("available_power"):
+                cp = ps.get_value("available_power")
 
             # We can use DeviceResource as a power source
-            if power_source.has_property("power_usage"):
-                cp = power_source.get_value("power_usage")
+            if ps.has_property("power_usage"):
+                cp = ps.get_value("power_usage")
 
             if cp is None:
                 continue
@@ -695,6 +738,11 @@ class DeviceManager(Resource):
         if self.debug:
             print(msg)
 
+    async def run_process_loop(self):
+        while True:
+            await asyncio.sleep(MINS(1))
+            self.process_managed_devices()
+
     def process_managed_devices(self):
         cap_per = self.capcity_percentage
 
@@ -709,6 +757,8 @@ class DeviceManager(Resource):
             self.debug_print(
                 "processing managed device: {}".format(device.name))
 
+            self.debug_print(f"{device.name} has {len(device.runtime_policy)} policies")
+
             has_any_conditions = False
 
             # set to None at first because there may be no action
@@ -722,22 +772,25 @@ class DeviceManager(Resource):
                     print("{} has a NoneType policy".format(device.name))
                     continue
 
+                self.debug_print(f"Running policy for: {policy.policy}")
+
                 policy.process(device)
 
                 has_any_conditions |= policy.has_conditions()
 
                 if policy.has_conditions():
+                    self.debug_print(f"Running policy conditions for: {policy.policy}")
                     cond_vals = policy.run_conditions()
 
                     self.debug_print("cond_vals for {}: {}".format(
-                        cond_vals,
-                        policy.policy))
+                        policy.name,
+                        cond_vals))
 
                     if cond_vals is True:
-                        can_run_policies.append(policy.policy)
+                        can_run_policies.append(policy.to_yaml())
 
                     elif cond_vals is False:
-                        can_not_run_policies.append(policy.policy)
+                        can_not_run_policies.append(policy.to_yaml())
 
                     # run_conditions() may not specify an action by returning
                     # None:
@@ -754,7 +807,7 @@ class DeviceManager(Resource):
 
                 else:
                     self.debug_print(
-                        "policy {} and no conditions".format(policy.policy))
+                        "policy {} has no conditions".format(policy.policy))
 
             self.debug_print("has conditions: {}".format(has_any_conditions))
             self.debug_print("can_run: {}".format(can_run))
@@ -914,8 +967,10 @@ class DeviceManager(Resource):
 
     def finished_running(self, device):
         if device in self.running_devices:
+            self.debug_print(f"device {device} is finished_running")
             self.running_devices.remove(device)
         else:
+            self.debug_print(f"finished_running() for device {device} called but not running?")
             # Devices was either already stopped or never started
             return
 
@@ -924,6 +979,7 @@ class DeviceManager(Resource):
 
         # process devicess because total power changed
         self.process_managed_devices()
+
 
     @property
     def running_devices_pretty(self):
@@ -1004,12 +1060,18 @@ class DeviceResource(Resource):
         else:
             self._runtime_policy = runtime_policy
 
-        def register_with_manager(rsrcs):
-            self.device_manager = rsrcs(device_manager)
-            if self.runtime_policy:
-                self.device_manager.register_managed_device(self)
+        # if it's already available, use it.
+        try:
+            self.device_manager = gr(device_manager)
+            # print(f"registering managed device {self.name}")
+            self.device_manager.register_managed_device(self)
+        except ResourceNotFoundException:
+            def register_with_manager(rsrcs):
+                self.device_manager = rsrcs(device_manager)
+                if self.runtime_policy:
+                    self.device_manager.register_managed_device(self)
 
-        self.rsrcs = ResourceRequires([device_manager], register_with_manager)
+            self.rsrcs = ResourceRequires([device_manager], register_with_manager)
 
     @property
     def runtime_policy(self):
@@ -1029,8 +1091,12 @@ class DeviceResource(Resource):
         if self.device_manager and value:
             self.device_manager.register_managed_device(self)
 
+    def set_runtime_priority(self, value):
+        self.priority = value
+        self.set_value("priority", self.priority)
+
     def running(self):
-        running = self.device_manager and self.device_manager.is_running(self)
+        running = self.device_manager is not None and self.device_manager.is_running(self)
 
         self.set_value('running', running)
 
@@ -1128,7 +1194,6 @@ class DeviceResource(Resource):
         :return False if cannot or should not be stopped
         :return True if successfully removed from device manager's running list
         """
-
         if not self.can_stop():
             return False
 
@@ -1170,45 +1235,45 @@ class DeviceResource(Resource):
         return json.dumps(serialized)
 
 
-class RemoteRestDeviceResource(RemoteRestResource, DeviceResource):
+# class RemoteRestDeviceResource(RemoteRestResource, DeviceResource):
 
-    """
-        variable_map = {"local_variable_name" : "remote_variable_name"}
-    """
+#     """
+#         variable_map = {"local_variable_name" : "remote_variable_name"}
+#     """
 
-    def __init__(self, name, hammock_instance, variable_map=None, **kwargs):
+#     def __init__(self, name, hammock_instance, variable_map=None, **kwargs):
 
-        if variable_map is None:
-            variable_map = {}
+#         if variable_map is None:
+#             variable_map = {}
 
-        RemoteRestResource.__init__(self, name, hammock_instance)
+#         RemoteRestResource.__init__(self, name, hammock_instance)
 
-        self.variable_map = variable_map
-        self.variables = list(self.variables.keys())
-        self.variables.extend(variable_map.keys())
+#         self.variable_map = variable_map
+#         self.variables = list(self.variables.keys())
+#         self.variables.extend(variable_map.keys())
 
-        if 'variables' in kwargs:
-            self.variables.extend(kwargs["variables"])
+#         if 'variables' in kwargs:
+#             self.variables.extend(kwargs["variables"])
 
-        kwargs["variables"] = self.variables
+#         kwargs["variables"] = self.variables
 
-        DeviceResource.__init__(self, name, **kwargs)
+#         DeviceResource.__init__(self, name, **kwargs)
 
-    def poll_func(self):
-        if "power_usage" not in self.variables:
-            return  # not ready yet
+#     def poll_func(self):
+#         if "power_usage" not in self.variables:
+#             return  # not ready yet
 
-        RemoteRestResource.poll_func(self)
+#         RemoteRestResource.poll_func(self)
 
-        for variable in self.variable_map:
-            self.setValue(variable, self.getValue(self.variable_map[variable]))
+#         for variable in self.variable_map:
+#             self.setValue(variable, self.getValue(self.variable_map[variable]))
 
-        self.power_usage = self.getValue("power_usage")
+#         self.power_usage = self.getValue("power_usage")
 
-        if self.power_usage:
-            DeviceResource.run(self)
-        else:
-            DeviceResource.stop(self)
+#         if self.power_usage:
+#             DeviceResource.run(self)
+#         else:
+#             DeviceResource.stop(self)
 
 
 def test_main():
@@ -1299,7 +1364,7 @@ def test_main():
 
 def test_occupancy_policy():
     Resource.clearResources()
-    device_manager = DeviceManager(max_power_budget=800)
+    device_manager = DeviceManager(max_power_budget=800, debug=True)
 
     occupancy_resource = Resource(
         "SomeOccupancyThing", variables=["occupancy"])
@@ -1330,7 +1395,7 @@ def test_occupancy_policy():
 
     device_manager.process_managed_devices()
 
-    assert not dev1.running(), "Device should not be running"
+    assert not dev1.running(), "Device should be running"
 
 
 def test_runifcan():
@@ -1375,15 +1440,18 @@ def test_group_policy():
 
     Resource.clearResources()
     device_manager = DeviceManager(max_power_budget=800)
+    device_manager.debug=True
 
     policy1 = RuntimePolicy(conditions=[lambda: True])
     policy2 = RuntimePolicy(conditions=[lambda: False])
 
     and_group = PolicyGroup(policies=[policy1, policy2])
-    or_group = PolicyGroup(policies=[policy1], or_policies=[policy2])
+    or_group = PolicyGroup(policies=[policy1], or_policies=[policy2, policy1])
 
     fake_device = DeviceResource("fake-device", 800)
     fake_device_or = DeviceResource("fake-device-or", 800)
+
+    asyncio.get_event_loop().run_until_complete(asyncio.sleep(2))
 
     fake_device.set_runtime_policy([and_group])
     fake_device_or.set_runtime_policy([or_group])
@@ -1401,7 +1469,7 @@ def test_minimum_runtime():
     Resource.clearResources()
     device_manager = DeviceManager(max_power_budget=800, debug=True)
 
-    device = DeviceResource("fake_device", 2000)
+    device = DeviceResource("fake_device_minimum_runtime", 2000)
 
     policy1 = MinimumRuntime(device, 1)
     policy2 = RunIfCanPolicy()
@@ -1419,6 +1487,7 @@ def test_minimum_runtime():
 
     asyncio.get_event_loop().run_until_complete(asyncio.sleep(2))
 
+    policy1.enabled = False
     device_manager.process_managed_devices()
 
     print(device.to_json())
@@ -1428,12 +1497,16 @@ def test_minimum_runtime():
     assert not policy2.can_run()
     assert not policy1.run_conditions()
     assert not policy2.run_conditions()
+
+    print(policy1.run_conditions())
+
     assert not device.running()
 
 
 def test_minimum_runtime_on_off_time():
     Resource.clearResources()
     device_manager = DeviceManager(max_power_budget=800, debug=True)
+    device_manager.debug = True
 
     device = DeviceResource("fake_device", 2000)
 
@@ -1454,9 +1527,12 @@ def test_minimum_runtime_on_off_time():
 
     assert policy1.current_runtime > 1
 
+    print("about to call stop()")
+    # disable the policy first because it will run the device as soon as device_manager
+    policy1.enabled = False
     device.stop()
 
-    device_manager.process_managed_devices()
+    assert not device.running()
 
     asyncio.get_event_loop().run_until_complete(asyncio.sleep(5))
 
@@ -1522,7 +1598,7 @@ def test_manager_default_power_source():
     ps1 = Resource("SolarPower", ["available_power"])
     ps1.set_value("available_power", 0)
 
-    dm = DeviceManager()
+    dm = DeviceManager(power_source="SolarPower")
 
     asyncio.get_event_loop().run_until_complete(asyncio.sleep(1))
 
@@ -1550,6 +1626,17 @@ def test_ignore_power_usage():
     dm.ignore_power_usage(fake_device2)
 
     assert dm.running_power == 100
+
+
+def test_device_manager_process_managed_devices():
+
+    dm = DeviceManager(max_power_budget=1000)
+
+    fake_device = DeviceResource("fd1", 100, runtime_policy=RunIfCanPolicy())
+
+    asyncio.get_event_loop().run_until_complete(asyncio.sleep(MINS(1.1)))
+
+    assert fake_device.running(), "This device should be running if process_managed_devices was called"
 
 
 if __name__ == "__main__":

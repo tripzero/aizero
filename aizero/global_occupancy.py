@@ -27,8 +27,7 @@ class GlobalOccupancy(Resource):
 
         self.occupancy = False
 
-    @asyncio.coroutine
-    def poll(self):
+    async def poll(self):
         while True:
             self.occupancy = False
 
@@ -47,4 +46,4 @@ class GlobalOccupancy(Resource):
 
             self.set_value("occupancy", float64(self.occupancy))
 
-            yield from asyncio.sleep(MINS(3))
+            await asyncio.sleep(MINS(3))

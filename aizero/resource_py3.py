@@ -10,19 +10,18 @@ class Py3Resource:
 
         asyncio.get_event_loop().create_task(self.poll())
 
-    @asyncio.coroutine
-    def poll(self):
+    async def poll(self):
         while True:
             if self.is_coroutine:
-                yield from self.poll_func()
+                await self.poll_func()
             else:
                 futures = self.poll_func()
 
                 if futures is not None:
                     for future in futures:
-                        yield from future
+                        await future
 
-            yield from asyncio.sleep(self.sleep_timer)
+            await asyncio.sleep(self.sleep_timer)
 
 
 class Py3PollWhileTrue:
@@ -33,7 +32,6 @@ class Py3PollWhileTrue:
 
         asyncio.get_event_loop().create_task(self.poll())
 
-    @asyncio.coroutine
-    def poll(self):
+    async def poll(self):
         while self.poll_func():
-            yield from asyncio.sleep(self.sleep_timer)
+            await asyncio.sleep(self.sleep_timer)

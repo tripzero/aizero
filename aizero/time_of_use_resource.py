@@ -73,6 +73,7 @@ class TimeOfUse(Resource):
 
             self.winter_schedule = config["time_of_use_schedule"]["winter"]
             self.summer_schedule = config["time_of_use_schedule"]["summer"]
+            self.tou_off_peak_day = config["time_of_use_off_peak_day"]
 
             self.poller = resource_poll(self.update_schedule, MINS(1))
         except ResourceNotFoundException:
@@ -88,6 +89,12 @@ class TimeOfUse(Resource):
             else:
                 sched = self.summer_schedule
                 self.setValue("schedule", "summer")
+
+            if self.tou_off_peak_day != -1:
+                if datetime.now().day == self.tou_off_peak_day:
+                    self.mode = Modes.off_peak
+                    self.set_value("mode", Modes.off_peak)
+                    return
 
             for mode in Modes.modes:
                 if is_mode(sched[mode], datetime.now().hour):
@@ -135,6 +142,7 @@ def main():
     assert not is_mode(winter_schedule[Modes.on_peak], 16)
     assert is_mode(winter_schedule[Modes.off_peak], 4)
     assert is_mode(summer_schedule[Modes.off_peak], 22)
+    assert is_mode(winter_schedule[Modes.off_peak], 22)
     assert not is_mode(summer_schedule[Modes.off_peak], 21)
 
 
