@@ -296,7 +296,8 @@ class OffIfUnoccupied(RuntimePolicy):
 
     def __init__(self, occupancy_resource_name, conditions=None,
                  or_conditions=None,
-                 occupancy_property="occupancy"):
+                 occupancy_property="occupancy",
+                 timeout=15):
 
         if conditions is None:
             conditions = []
@@ -307,6 +308,7 @@ class OffIfUnoccupied(RuntimePolicy):
 
         self.checked = False
         self.occupancy = None
+        self.timeout = timeout
 
         def wait_occupancy(gr):
             self.occupancy_resource = gr(occupancy_resource_name)
@@ -326,7 +328,7 @@ class OffIfUnoccupied(RuntimePolicy):
     async def can_run_check_timeout(self):
         self.checked = True
 
-        await asyncio.sleep(MINS(15))
+        await asyncio.sleep(MINS(self.timeout))
 
         self.checked = False
 

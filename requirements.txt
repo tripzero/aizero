@@ -7,4 +7,5 @@ pymyq
 pysolar
 python_openzwave
 tensorflow
-
+gmqtt
+fuzzywuzzy

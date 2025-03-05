@@ -3,6 +3,7 @@ import asyncio
 from kasa import Discover
 from kasa import SmartDeviceException
 from kasa import SmartStrip
+from kasa import DeviceType
 
 from aizero.device_resource import DeviceResource
 from aizero.resource import MINS, has_resource, ResourceNameAlreadyTaken
@@ -98,8 +99,10 @@ class KasaPlug(DeviceResource):
             asyncio.get_event_loop().create_task(self.do_get_kasa_plug())
 
         if device is not None:
+            # print(f"device features: {self.device.features}")
+            # print(f"device type: {self.device.device_type}")
             self.has_emeter = self.device.has_emeter
-            self.is_dimmable = self.device.is_dimmable
+            self.is_dimmable = self.device.device_type is DeviceType.Dimmer
 
     
     async def do_get_kasa_plug(self):
@@ -110,7 +113,7 @@ class KasaPlug(DeviceResource):
             await asyncio.sleep(MINS(1))
 
         self.has_emeter = self.device.has_emeter
-        self.is_dimmable = self.device.is_dimmable
+        self.is_dimmable = self.device.device_type is DeviceType.Dimmer
 
     def set(self, val):
         """
@@ -156,7 +159,8 @@ class KasaPlug(DeviceResource):
     async def _update_power_usage(self):
 
         if self.has_emeter:
-            consumption = await self.device.current_consumption()
+            emeter = self.device.modules.get("Energy")
+            consumption = emeter.current_consumption
             self.update_power_usage(consumption)
 
     def run(self):

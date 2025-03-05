@@ -455,7 +455,7 @@ class Resource(object):
 
         # depricated:
         # self.data_frame = self.data_frame.append(df)
-        self.data_frame = pd.concat([self.data_frame, df])
+        # self.data_frame = pd.concat([self.data_frame, df])
 
         if "timestamp" in self.data_frame.columns:
             self.data_frame = self.data_frame.set_index("timestamp")
