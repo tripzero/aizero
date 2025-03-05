@@ -5,7 +5,7 @@ pyecobee
 pyHS100
 pymyq
 pysolar
-python_openzwave
+# python_openzwave
 tensorflow
 gmqtt
 fuzzywuzzy
